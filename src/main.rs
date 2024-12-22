@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         client_password: Some(FloatingField {
             tag: TagValue::CLIENT_PASSWORD_TAG,
             length: 0,
-            data: "Comtec123!".to_string(),
+            data: "SomePassword!!".to_string(),
         }),
         client_signature: None,
         agent_extension: None,
