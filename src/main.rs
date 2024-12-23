@@ -13,6 +13,7 @@ mod cisco;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    log4rs::init_file("log4rs.yml", Default::default())?;
     let open_req = OpenReq {
         mhdr: MHDR {
             length: 0,
