@@ -2,6 +2,9 @@ use super::{Deserializable, Serializable};
 
 #[allow(unused, non_camel_case_types)]
 #[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 메시지 타입
+///
 pub enum MessageType {
     FAILURE_CONF = 1,
     FAILURE_EVENT = 2,

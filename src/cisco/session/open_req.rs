@@ -1,6 +1,10 @@
 use crate::cisco::{FloatingField, MessageType, Serializable, MHDR};
 
 #[allow(unused)]
+#[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 OPEN_REQ 메시지
+/// 
 pub struct OpenReq {
     pub mhdr: MHDR,
     pub invoke_id: u32,

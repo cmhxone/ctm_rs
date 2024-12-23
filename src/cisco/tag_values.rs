@@ -2,6 +2,9 @@ use super::{Deserializable, Serializable};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 태그 값
+///
 pub enum TagValue {
     CLIENT_ID_TAG = 1,
     CLIENT_PASSWORD_TAG = 2,

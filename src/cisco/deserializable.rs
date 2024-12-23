@@ -2,7 +2,13 @@ use std::fmt::Debug;
 
 use log::debug;
 
+///
+/// 역직렬화 트레잇
+///
 pub trait Deserializable {
+    ///
+    /// 버퍼로 입력받은 데이터를 역직렬화 후, 잔여 버퍼와 함께 반환한다.
+    ///
     fn deserialize<Buffer: AsMut<[u8]>>(buffer: &mut Buffer) -> (Vec<u8>, Self);
 }
 

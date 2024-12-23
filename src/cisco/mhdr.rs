@@ -1,6 +1,9 @@
 use super::{Deserializable, MessageType, Serializable};
 
 #[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 메시지 헤더
+///
 pub struct MHDR {
     pub length: u32,
     pub message_type: MessageType,

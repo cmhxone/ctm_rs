@@ -2,6 +2,9 @@ use crate::cisco::{Deserializable, FloatingField, TagValue, MHDR};
 
 #[allow(unused)]
 #[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 OPEN_CONF 메시지
+///
 pub struct OpenConf {
     mhdr: MHDR,
     invoke_id: u32,

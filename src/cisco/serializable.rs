@@ -1,4 +1,10 @@
+///
+/// 직렬화 트레잇
+///
 pub trait Serializable {
+    ///
+    /// 데이터를 u8 벡터로 직렬화하여 반환한다
+    ///
     fn serialize(self) -> Vec<u8>;
 }
 
