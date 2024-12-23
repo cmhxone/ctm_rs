@@ -1,5 +1,3 @@
-use log::debug;
-
 use crate::cisco::{Deserializable, FloatingField, TagValue, MHDR};
 
 #[allow(unused)]
@@ -47,7 +45,6 @@ impl Deserializable for OpenConf {
 
         loop {
             let (_, floating_field) = Option::<FloatingField<Vec<u8>>>::deserialize(&mut buffer);
-            debug!("floating_field: {:?}", floating_field);
             match floating_field {
                 Some(mut field) => match field.tag {
                     TagValue::AGENT_EXTENSION_TAG => {
