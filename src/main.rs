@@ -13,6 +13,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let ctm = CTM::new().await?;
     ctm.start().await?;
 
-    #[allow(unreachable_code)]
     Ok(())
 }
