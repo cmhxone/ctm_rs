@@ -19,23 +19,32 @@ use crate::{
 ///
 pub struct CTIClient {
     is_active: bool,
+    invoke_id: u32,
     cti_event_channel_tx: mpsc::Sender<CTIEvent>,
     broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
 }
 
 impl CTIClient {
+    ///
+    /// 새로운 CTI Client 구조체를 생성
+    ///
     pub async fn new(
         is_active: bool,
         cti_event_channel_tx: mpsc::Sender<CTIEvent>,
         broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
     ) -> Result<Self, Box<dyn Error>> {
+        let invoke_id = 0;
         Ok(Self {
             is_active,
+            invoke_id,
             cti_event_channel_tx,
             broker_event_channel_rx,
         })
     }
 
+    ///
+    /// CTI 서버에 접속
+    ///
     pub async fn connect(mut self) -> () {
         let cti_server_address = dotenv::var(match self.is_active {
             true => "CTI_SERVER_SIDE_A_ADDRESS",
@@ -84,7 +93,7 @@ impl CTIClient {
                     length: 0,
                     message_type: MessageType::OPEN_REQ,
                 },
-                invoke_id: 0,
+                invoke_id: self.get_invoke_id(),
                 version_number: 24,
                 idle_timeout: 100,
                 peripheral_id: 5000,
@@ -205,5 +214,13 @@ impl CTIClient {
                 }
             }
         });
+    }
+
+    ///
+    /// InvokeID 값을 증가하고 증가한 값을 반환한다
+    ///
+    fn get_invoke_id(&mut self) -> u32 {
+        self.invoke_id = self.invoke_id + 1;
+        self.invoke_id
     }
 }
