@@ -5,6 +5,7 @@ pub mod mhdr;
 pub mod serializable;
 pub mod session;
 pub mod tag_values;
+pub mod supervisor;
 
 pub use deserializable::Deserializable;
 pub use floating_field::FloatingField;

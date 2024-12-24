@@ -6,7 +6,10 @@ use tokio::{
 };
 
 use crate::{
-    cisco::{session::OpenConf, Deserializable, MessageType},
+    cisco::{
+        session::OpenConf, supervisor::agent_team_config_event::AgentTeamConfigEvent,
+        Deserializable, MessageType,
+    },
     ctm::cti_client::CTIClient,
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
 };
@@ -89,6 +92,11 @@ impl CTM {
                             MessageType::OPEN_CONF => {
                                 let (_, open_conf) = OpenConf::deserialize(&mut data);
                                 log::info!("{:?}", open_conf);
+                            }
+                            MessageType::AGENT_TEAM_CONFIG_EVENT => {
+                                let (_, agent_team_config_event) =
+                                    AgentTeamConfigEvent::deserialize(&mut data);
+                                log::info!("{:?}", agent_team_config_event);
                             }
                             // 처리되지 않은 메시지 수신
                             message_type => {
