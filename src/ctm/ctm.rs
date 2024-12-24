@@ -1,0 +1,110 @@
+use std::{error::Error, thread, time::Duration};
+
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::timeout,
+};
+
+use crate::{
+    cisco::{session::OpenConf, Deserializable, MessageType},
+    ctm::cti_client::CTIClient,
+    event::{broker_event::BrokerEvent, cti_event::CTIEvent},
+};
+
+pub struct CTM {
+    is_active: bool,
+    cti_client: CTIClient,
+    cti_event_channel_rx: mpsc::Receiver<CTIEvent>,
+    cti_event_channel_tx: mpsc::Sender<CTIEvent>,
+    broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+    broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
+}
+
+impl CTM {
+    pub async fn new() -> Result<Self, Box<dyn Error>> {
+        let is_active = true;
+        let (cti_event_channel_tx, cti_event_channel_rx) = mpsc::channel::<CTIEvent>(1_024);
+        let (broker_event_channel_tx, broker_event_channel_rx) =
+            broadcast::channel::<BrokerEvent>(1_024);
+
+        let cti_client = CTIClient::new(
+            is_active,
+            cti_event_channel_tx.clone(),
+            broker_event_channel_rx.resubscribe(),
+        )
+        .await?;
+
+        Ok(Self {
+            is_active,
+            cti_client,
+            cti_event_channel_rx,
+            cti_event_channel_tx,
+            broker_event_channel_rx,
+            broker_event_channel_tx,
+        })
+    }
+
+    pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
+        self.cti_client.connect().await;
+
+        loop {
+            match timeout(Duration::from_millis(10), self.cti_event_channel_rx.recv()).await {
+                Ok(Some(event)) => match event {
+                    // 오류 이벤트 수신신
+                    CTIEvent::Error {
+                        cti_server_host,
+                        error_cause,
+                    } => {
+                        log::warn!(
+                            "Received CTI Server error. cti_server_host: {}, error_cause: {}",
+                            cti_server_host,
+                            error_cause
+                        );
+
+                        // CTI 서버가 이중화 넘어가는데 시간이 소요됨
+                        thread::sleep(Duration::from_millis(500));
+                        self.is_active = !self.is_active;
+                        self.cti_client = CTIClient::new(
+                            false,
+                            self.cti_event_channel_tx.clone(),
+                            self.broker_event_channel_rx.resubscribe(),
+                        )
+                        .await?;
+                    }
+                    // CTI 메시지 수신
+                    CTIEvent::Recevied {
+                        cti_server_host,
+                        message_type,
+                        mut data,
+                    } => {
+                        log::debug!(
+                            "Received CTI event. cti_server_host: {}, message_type: {:?}, data: {:?}",
+                            cti_server_host,
+                            message_type, data
+                        );
+                        // 메시지 역직렬화
+                        match message_type {
+                            // OPEN_CONF 메시지 수신
+                            MessageType::OPEN_CONF => {
+                                let (_, open_conf) = OpenConf::deserialize(&mut data);
+                                log::info!("{:?}", open_conf);
+                            }
+                            // 처리되지 않은 메시지 수신
+                            message_type => {
+                                log::info!(
+                                    "Received CTI message. message_type: {:?}",
+                                    message_type
+                                );
+                            }
+                        }
+                    }
+                },
+                Ok(None) => {}
+                Err(_) => {}
+            };
+        }
+
+        #[allow(unreachable_code)]
+        Ok(())
+    }
+}

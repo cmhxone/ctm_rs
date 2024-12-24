@@ -1,7 +1,7 @@
 use super::{Deserializable, Serializable};
 
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 ///
 /// Cisco CTI 프로토콜 태그 값
 ///

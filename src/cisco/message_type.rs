@@ -1,7 +1,7 @@
 use super::{Deserializable, Serializable};
 
 #[allow(unused, non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 ///
 /// Cisco CTI 프로토콜 메시지 타입
 ///
