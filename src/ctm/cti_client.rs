@@ -48,20 +48,34 @@ impl CTIClient {
         })
         .unwrap_or("42027".to_string());
 
-        let mut client_stream =
-            match TcpStream::connect(format!("{}:{}", cti_server_address, cti_server_port)).await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    self.cti_event_channel_tx
-                        .send(CTIEvent::Error {
-                            cti_server_host: cti_server_address,
-                            error_cause: e.to_string(),
-                        })
-                        .await
-                        .unwrap();
-                    return;
-                }
-            };
+        let mut client_stream = match timeout(
+            Duration::from_millis(3_000),
+            TcpStream::connect(format!("{}:{}", cti_server_address, cti_server_port)),
+        )
+        .await
+        {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(e)) => {
+                self.cti_event_channel_tx
+                    .send(CTIEvent::Error {
+                        cti_server_host: cti_server_address,
+                        error_cause: e.to_string(),
+                    })
+                    .await
+                    .unwrap();
+                return;
+            }
+            Err(e) => {
+                self.cti_event_channel_tx
+                    .send(CTIEvent::Error {
+                        cti_server_host: cti_server_address,
+                        error_cause: e.to_string(),
+                    })
+                    .await
+                    .unwrap();
+                return;
+            }
+        };
 
         tokio::spawn(async move {
             // OPEN_REQ 메시지 전송
@@ -122,7 +136,17 @@ impl CTIClient {
             let mut buffer = vec![0_u8; 4_096];
             loop {
                 match timeout(Duration::from_millis(10), rx.read(&mut buffer)).await {
-                    Ok(Ok(n)) if n == 0 => {}
+                    Ok(Ok(n)) if n == 0 => {
+                        self.cti_event_channel_tx
+                            .send(CTIEvent::Error {
+                                cti_server_host: cti_server_address.clone(),
+                                error_cause: "Disconnected from server".to_string(),
+                            })
+                            .await
+                            .unwrap();
+                        log::error!("Disconnected from server");
+                        return;
+                    }
                     Ok(Ok(n)) => {
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
@@ -157,6 +181,7 @@ impl CTIClient {
                             .await
                             .unwrap();
                         log::error!("Read error. {:#?}", e);
+                        return;
                     }
                     Err(_) => {}
                 }

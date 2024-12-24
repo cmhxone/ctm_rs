@@ -65,11 +65,12 @@ impl CTM {
                         thread::sleep(Duration::from_millis(500));
                         self.is_active = !self.is_active;
                         self.cti_client = CTIClient::new(
-                            false,
+                            self.is_active,
                             self.cti_event_channel_tx.clone(),
                             self.broker_event_channel_rx.resubscribe(),
                         )
                         .await?;
+                        self.cti_client.connect().await;
                     }
                     // CTI 메시지 수신
                     CTIEvent::Recevied {
