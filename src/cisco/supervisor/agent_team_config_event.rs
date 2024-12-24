@@ -2,6 +2,9 @@ use crate::cisco::{Deserializable, FloatingField, TagValue, MHDR};
 
 #[allow(unused)]
 #[derive(Debug)]
+///
+/// Cisco CTI 프로토콜 AGENT_TEAM_CONFIG_EVENT
+/// 
 pub struct AgentTeamConfigEvent {
     pub mhdr: MHDR,
     pub peripheral_id: u32,
