@@ -49,11 +49,11 @@ impl Deserializable for OpenConf {
         loop {
             let (_, floating_field) = Option::<FloatingField<Vec<u8>>>::deserialize(&mut buffer);
             match floating_field {
+                Some(field) if field.length == 0 => {
+                    continue;
+                }
                 Some(mut field) => match field.tag {
                     TagValue::AGENT_EXTENSION_TAG => {
-                        if field.length == 0 {
-                            continue;
-                        }
                         let (sub_buffer, sub_result) = String::deserialize(&mut field.data);
                         agent_extension = Some(FloatingField {
                             tag: field.tag,
@@ -63,9 +63,6 @@ impl Deserializable for OpenConf {
                         buffer = sub_buffer;
                     }
                     TagValue::AGENT_ID_TAG => {
-                        if field.length == 0 {
-                            continue;
-                        }
                         let (sub_buffer, sub_result) = String::deserialize(&mut field.data);
                         agent_id = Some(FloatingField {
                             tag: field.tag,
@@ -75,9 +72,6 @@ impl Deserializable for OpenConf {
                         buffer = sub_buffer;
                     }
                     TagValue::AGENT_INSTRUMENT_TAG => {
-                        if field.length == 0 {
-                            continue;
-                        }
                         let (sub_buffer, sub_result) = String::deserialize(&mut field.data);
                         agent_instrument = Some(FloatingField {
                             tag: field.tag,
