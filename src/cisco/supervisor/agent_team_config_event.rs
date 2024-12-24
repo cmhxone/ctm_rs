@@ -45,6 +45,7 @@ impl Deserializable for AgentTeamConfigEvent {
             let (_, floating_field) = Option::<FloatingField<Vec<u8>>>::deserialize(&mut buffer);
             match floating_field {
                 Some(field) if field.length == 0 => {
+                    buffer = field.data;
                     continue;
                 }
                 Some(mut field) => match field.tag {

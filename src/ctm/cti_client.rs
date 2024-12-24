@@ -9,7 +9,8 @@ use tokio::{
 
 use crate::{
     cisco::{
-        session::OpenReq, Deserializable, FloatingField, MessageType, Serializable, TagValue, MHDR,
+        control::query_agent_state_req::QueryAgentStateReq, session::OpenReq, Deserializable,
+        FloatingField, MessageType, Serializable, TagValue, MHDR,
     },
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
 };
@@ -140,8 +141,9 @@ impl CTIClient {
                 }
             }
 
-            let (mut rx, _tx) = client_stream.split();
+            let (mut rx, mut tx) = client_stream.split();
 
+            // CTI 서버 메시지 핸들링
             let mut buffer = vec![0_u8; 4_096];
             loop {
                 match timeout(Duration::from_millis(10), rx.read(&mut buffer)).await {
@@ -195,6 +197,7 @@ impl CTIClient {
                     Err(_) => {}
                 }
 
+                // 브로커 이벤트 핸들링
                 match timeout(
                     Duration::from_millis(10),
                     self.broker_event_channel_rx.recv(),
@@ -202,10 +205,54 @@ impl CTIClient {
                 .await
                 {
                     Ok(Ok(event)) => match event {
-                        BrokerEvent::ToClientEvent {} => {}
-                        BrokerEvent::ToServerEvent {} => {
-                            log::debug!("Received broking server event");
+                        BrokerEvent::RequestAgentStateEvent {
+                            peripheral_id,
+                            agent_id,
+                        } => {
+                            log::debug!(
+                                "Received request agent state event: peripheral_id: {} agent_id: {}", peripheral_id,
+                                agent_id
+                            );
+
+                            let query_agent_state_req = QueryAgentStateReq {
+                                mhdr: MHDR {
+                                    length: 0,
+                                    message_type: MessageType::QUERY_AGENT_STATE_REQ,
+                                },
+                                invoke_id: self.get_invoke_id(),
+                                peripheral_id,
+                                mrd_id: 0,
+                                icm_agent_id: 0,
+                                agent_extension: None,
+                                agent_id: Some(FloatingField {
+                                    tag: TagValue::AGENT_ID_TAG,
+                                    length: agent_id.len() as u16,
+                                    data: agent_id,
+                                }),
+                                agent_instrument: None,
+                            };
+
+                            match timeout(
+                                Duration::from_millis(100),
+                                tx.write(&query_agent_state_req.serialize()),
+                            )
+                            .await
+                            {
+                                Ok(Ok(_)) => {}
+                                Ok(Err(e)) => {
+                                    self.cti_event_channel_tx
+                                        .send(CTIEvent::Error {
+                                            cti_server_host: cti_server_address.clone(),
+                                            error_cause: e.to_string(),
+                                        })
+                                        .await
+                                        .unwrap();
+                                    log::error!("Send error. {:#?}", e);
+                                }
+                                Err(_) => {}
+                            }
                         }
+                        _ => {}
                     },
                     Ok(Err(e)) => {
                         log::error!("Unabled to receive broking event. {:?}", e);

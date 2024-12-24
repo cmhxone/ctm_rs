@@ -3,6 +3,6 @@
 ///
 #[derive(Debug, Clone)]
 pub enum BrokerEvent {
-    ToClientEvent {},
-    ToServerEvent {},
+    BroadCastAgentState {},
+    RequestAgentStateEvent { peripheral_id: u32, agent_id: String },
 }

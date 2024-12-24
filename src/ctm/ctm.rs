@@ -7,8 +7,8 @@ use tokio::{
 
 use crate::{
     cisco::{
-        session::OpenConf, supervisor::agent_team_config_event::AgentTeamConfigEvent,
-        Deserializable, MessageType,
+        control::query_agent_state_conf::QueryAgentStateConf, session::OpenConf,
+        supervisor::agent_team_config_event::AgentTeamConfigEvent, Deserializable, MessageType,
     },
     ctm::cti_client::CTIClient,
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
@@ -93,10 +93,33 @@ impl CTM {
                                 let (_, open_conf) = OpenConf::deserialize(&mut data);
                                 log::info!("{:?}", open_conf);
                             }
+                            // AGENT_TEAM_CONFIG_EVENT 메시지 수신
                             MessageType::AGENT_TEAM_CONFIG_EVENT => {
                                 let (_, agent_team_config_event) =
                                     AgentTeamConfigEvent::deserialize(&mut data);
                                 log::info!("{:?}", agent_team_config_event);
+
+                                // ATCAgent의 상태를 CTI 서버에 요청한다
+                                agent_team_config_event.agents.iter().for_each(
+                                    |agent| match &agent.agent_id {
+                                        Some(agent_id) => {
+                                            self.broker_event_channel_tx
+                                                .send(BrokerEvent::RequestAgentStateEvent {
+                                                    peripheral_id: agent_team_config_event
+                                                        .peripheral_id,
+                                                    agent_id: agent_id.data.clone(),
+                                                })
+                                                .unwrap();
+                                        }
+                                        None => {}
+                                    },
+                                );
+                            }
+                            // QUERY_AGENT_STATE_CONF 메시지 수신
+                            MessageType::QUERY_AGENT_STATE_CONF => {
+                                let (_, query_agent_state_conf) =
+                                    QueryAgentStateConf::deserialize(&mut data);
+                                log::info!("{:?}", query_agent_state_conf);
                             }
                             // 처리되지 않은 메시지 수신
                             message_type => {

@@ -6,6 +6,7 @@ pub mod serializable;
 pub mod session;
 pub mod tag_values;
 pub mod supervisor;
+pub mod control;
 
 pub use deserializable::Deserializable;
 pub use floating_field::FloatingField;
