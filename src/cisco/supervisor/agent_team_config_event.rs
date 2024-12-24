@@ -3,7 +3,7 @@ use crate::cisco::{Deserializable, FloatingField, TagValue, MHDR};
 #[allow(unused)]
 #[derive(Debug)]
 ///
-/// Cisco CTI 프로토콜 AGENT_TEAM_CONFIG_EVENT
+/// Cisco CTI 프로토콜 AGENT_TEAM_CONFIG_EVENT 메시지
 /// 
 pub struct AgentTeamConfigEvent {
     pub mhdr: MHDR,
@@ -18,6 +18,9 @@ pub struct AgentTeamConfigEvent {
 
 #[allow(unused)]
 #[derive(Debug)]
+///
+/// AGENT_TEAM_CONFIG_EVENT의 Agent 구조체
+/// 
 pub struct AgentTeamConfigEventAgent {
     pub agent_id: Option<FloatingField<String>>,
     pub agent_flags: Option<FloatingField<u16>>,
