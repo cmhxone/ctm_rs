@@ -1,7 +1,7 @@
 use super::{Deserializable, Serializable, TagValue};
 
 #[allow(unused)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 ///
 /// Cisco CTI 프로토콜 가변 필드
 ///

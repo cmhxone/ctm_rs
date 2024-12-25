@@ -14,4 +14,5 @@ pub enum CTIEvent {
         message_type: MessageType,
         data: Vec<u8>,
     },
+    TimeToHeartBeat,
 }

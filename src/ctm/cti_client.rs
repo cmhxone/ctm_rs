@@ -1,16 +1,24 @@
-use std::{error::Error, time::Duration};
+use std::{
+    error::Error,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::{broadcast, mpsc},
-    time::timeout,
+    time::{sleep, timeout},
 };
 
 use crate::{
     cisco::{
-        control::query_agent_state_req::QueryAgentStateReq, session::OpenReq, Deserializable,
-        FloatingField, MessageType, Serializable, TagValue, MHDR,
+        control::query_agent_state_req::QueryAgentStateReq,
+        session::{heartbeat_req::HeartBeatReq, OpenReq},
+        Deserializable, FloatingField, MessageType, Serializable, TagValue, MHDR,
     },
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
 };
@@ -20,6 +28,7 @@ use crate::{
 ///
 pub struct CTIClient {
     is_active: bool,
+    is_running: Arc<AtomicBool>,
     invoke_id: u32,
     cti_event_channel_tx: mpsc::Sender<CTIEvent>,
     broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
@@ -34,9 +43,11 @@ impl CTIClient {
         cti_event_channel_tx: mpsc::Sender<CTIEvent>,
         broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
     ) -> Result<Self, Box<dyn Error>> {
+        let is_running = Arc::new(AtomicBool::new(false));
         let invoke_id = 0;
         Ok(Self {
             is_active,
+            is_running,
             invoke_id,
             cti_event_channel_tx,
             broker_event_channel_rx,
@@ -47,6 +58,11 @@ impl CTIClient {
     /// CTI 서버에 접속
     ///
     pub async fn connect(mut self) -> () {
+        const ASYNC_POLL_TIMEOUT: u64 = 10;
+        const HEART_BEAT_TIMEOUT: u64 = 10_000;
+
+        let is_running = self.is_running.clone();
+
         let cti_server_address = dotenv::var(match self.is_active {
             true => "CTI_SERVER_SIDE_A_ADDRESS",
             false => "CTI_SERVER_SIDE_B_ADDRESS",
@@ -86,6 +102,11 @@ impl CTIClient {
                 return;
             }
         };
+        is_running.clone().store(true, Ordering::Release);
+        let is_running = is_running.clone();
+
+        let is_running_heartbeat = is_running.clone();
+        let cti_event_channel_tx_heartbeat = self.cti_event_channel_tx.clone();
 
         tokio::spawn(async move {
             // OPEN_REQ 메시지 전송
@@ -130,6 +151,7 @@ impl CTIClient {
                     );
                 }
                 Err(e) => {
+                    is_running.store(false, Ordering::Release);
                     self.cti_event_channel_tx
                         .send(CTIEvent::Error {
                             cti_server_host: cti_server_address,
@@ -146,8 +168,14 @@ impl CTIClient {
             // CTI 서버 메시지 핸들링
             let mut buffer = vec![0_u8; 4_096];
             loop {
-                match timeout(Duration::from_millis(10), rx.read(&mut buffer)).await {
+                match timeout(
+                    Duration::from_millis(ASYNC_POLL_TIMEOUT),
+                    rx.read(&mut buffer),
+                )
+                .await
+                {
                     Ok(Ok(n)) if n == 0 => {
+                        is_running.store(false, Ordering::Release);
                         self.cti_event_channel_tx
                             .send(CTIEvent::Error {
                                 cti_server_host: cti_server_address.clone(),
@@ -184,6 +212,7 @@ impl CTIClient {
                     }
                     Ok(Err(e)) => {
                         // CTI 이벤트 채널로 오류 이벤트를 발생시킨다
+                        is_running.store(false, Ordering::Release);
                         self.cti_event_channel_tx
                             .send(CTIEvent::Error {
                                 cti_server_host: cti_server_address.clone(),
@@ -199,12 +228,46 @@ impl CTIClient {
 
                 // 브로커 이벤트 핸들링
                 match timeout(
-                    Duration::from_millis(10),
+                    Duration::from_millis(ASYNC_POLL_TIMEOUT),
                     self.broker_event_channel_rx.recv(),
                 )
                 .await
                 {
                     Ok(Ok(event)) => match event {
+                        // HEART_BEAT_REQ 전송 요청 이벤트
+                        BrokerEvent::RequestHeartBeatReq => {
+                            log::debug!("Received request heartbeat req");
+
+                            let heartbeat_req = HeartBeatReq {
+                                mhdr: MHDR {
+                                    length: 4,
+                                    message_type: MessageType::HEARTBEAT_REQ,
+                                },
+                                invoke_id: self.get_invoke_id(),
+                            };
+
+                            match timeout(
+                                Duration::from_millis(100),
+                                tx.write(&heartbeat_req.serialize()),
+                            )
+                            .await
+                            {
+                                Ok(Ok(_)) => {}
+                                Ok(Err(e)) => {
+                                    is_running.store(false, Ordering::Release);
+                                    self.cti_event_channel_tx
+                                        .send(CTIEvent::Error {
+                                            cti_server_host: cti_server_address.clone(),
+                                            error_cause: e.to_string(),
+                                        })
+                                        .await
+                                        .unwrap();
+                                    log::error!("Send error. {:#?}", e);
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        // QUERY_AGENT_STATE_REQ 전송 요청 이벤트
                         BrokerEvent::RequestAgentStateEvent {
                             peripheral_id,
                             agent_id,
@@ -240,6 +303,7 @@ impl CTIClient {
                             {
                                 Ok(Ok(_)) => {}
                                 Ok(Err(e)) => {
+                                    is_running.store(false, Ordering::Release);
                                     self.cti_event_channel_tx
                                         .send(CTIEvent::Error {
                                             cti_server_host: cti_server_address.clone(),
@@ -259,6 +323,18 @@ impl CTIClient {
                     }
                     Err(_) => {}
                 }
+            }
+        });
+
+        // HEART_BEAT 전송
+        tokio::spawn(async move {
+            sleep(Duration::from_millis(HEART_BEAT_TIMEOUT)).await;
+            while is_running_heartbeat.load(Ordering::Acquire) {
+                cti_event_channel_tx_heartbeat
+                    .send(CTIEvent::TimeToHeartBeat)
+                    .await
+                    .unwrap();
+                sleep(Duration::from_millis(HEART_BEAT_TIMEOUT)).await;
             }
         });
     }

@@ -1,4 +1,9 @@
-use std::{error::Error, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use tokio::{
     sync::{broadcast, mpsc},
@@ -14,6 +19,8 @@ use crate::{
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
 };
 
+use super::agent_info::AgentInfo;
+
 pub struct CTM {
     is_active: bool,
     cti_client: CTIClient,
@@ -21,6 +28,7 @@ pub struct CTM {
     cti_event_channel_tx: mpsc::Sender<CTIEvent>,
     broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
     broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
+    agent_info_map: HashMap<String, AgentInfo>,
 }
 
 impl CTM {
@@ -37,6 +45,8 @@ impl CTM {
         )
         .await?;
 
+        let agent_info_map = HashMap::new();
+
         Ok(Self {
             is_active,
             cti_client,
@@ -44,6 +54,7 @@ impl CTM {
             cti_event_channel_tx,
             broker_event_channel_rx,
             broker_event_channel_tx,
+            agent_info_map,
         })
     }
 
@@ -53,7 +64,14 @@ impl CTM {
         loop {
             match timeout(Duration::from_millis(10), self.cti_event_channel_rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    // 오류 이벤트 수신신
+                    // HeartBeat 요청 전송 시간 이벤트 수신
+                    CTIEvent::TimeToHeartBeat => {
+                        log::debug!("Received time to send heartbeat event.");
+                        self.broker_event_channel_tx
+                            .send(BrokerEvent::RequestHeartBeatReq)
+                            .unwrap();
+                    }
+                    // 오류 이벤트 수신
                     CTIEvent::Error {
                         cti_server_host,
                         error_cause,
@@ -110,6 +128,51 @@ impl CTM {
                                                     agent_id: agent_id.data.clone(),
                                                 })
                                                 .unwrap();
+
+                                            let agent_state =
+                                                agent.agent_state.clone().unwrap().data;
+                                            let state_duration = SystemTime::now()
+                                                .duration_since(UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_secs();
+                                            let state_duration = state_duration
+                                                - agent.state_duration.clone().unwrap().data as u64;
+
+                                            match self.agent_info_map.get_mut(&agent_id.data) {
+                                                Some(agent_info) => {
+                                                    agent_info.agent_state = agent_state;
+                                                    agent_info.state_duration = state_duration;
+
+                                                    // 상담직원 이벤트 전송
+                                                    Self::broadcast_agent_info(
+                                                        self.broker_event_channel_tx.clone(),
+                                                        agent_info.clone(),
+                                                    );
+                                                }
+                                                None => {
+                                                    let agent_info = AgentInfo {
+                                                        icm_agent_id: 0,
+                                                        agent_id: agent_id.data.clone(),
+                                                        agent_state,
+                                                        state_duration,
+                                                        reason_code: 0,
+                                                        skill_group_id: 0,
+                                                        direction: 0,
+                                                        agent_extension: "".to_string(),
+                                                    };
+
+                                                    self.agent_info_map.insert(
+                                                        agent_id.data.clone(),
+                                                        agent_info.clone(),
+                                                    );
+
+                                                    // 상담직원 이벤트 전송
+                                                    Self::broadcast_agent_info(
+                                                        self.broker_event_channel_tx.clone(),
+                                                        agent_info,
+                                                    );
+                                                }
+                                            };
                                         }
                                         None => {}
                                     },
@@ -120,6 +183,30 @@ impl CTM {
                                 let (_, query_agent_state_conf) =
                                     QueryAgentStateConf::deserialize(&mut data);
                                 log::info!("{:?}", query_agent_state_conf);
+
+                                let agent_id = query_agent_state_conf.agent_id.unwrap().data;
+                                let agent_state = query_agent_state_conf.agent_state;
+                                let icm_agent_id = query_agent_state_conf.icm_agent_id;
+                                let skill_group_id =
+                                    query_agent_state_conf.skill_group_id.unwrap().data;
+                                let agent_extension =
+                                    query_agent_state_conf.agent_extension.unwrap().data;
+
+                                match self.agent_info_map.get_mut(&agent_id) {
+                                    Some(agent_info) => {
+                                        agent_info.agent_state = agent_state;
+                                        agent_info.skill_group_id = skill_group_id as u16;
+                                        agent_info.icm_agent_id = icm_agent_id;
+                                        agent_info.agent_extension = agent_extension;
+
+                                        // 상담직원 이벤트 전송
+                                        Self::broadcast_agent_info(
+                                            self.broker_event_channel_tx.clone(),
+                                            agent_info.clone(),
+                                        );
+                                    }
+                                    None => {}
+                                };
                             }
                             // 처리되지 않은 메시지 수신
                             message_type => {
@@ -138,5 +225,17 @@ impl CTM {
 
         #[allow(unreachable_code)]
         Ok(())
+    }
+
+    ///
+    /// 상담직원 상태를 브로커 채널에 전송한다
+    ///
+    fn broadcast_agent_info(
+        broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
+        agent_info: AgentInfo,
+    ) {
+        broker_event_channel_tx
+            .send(BrokerEvent::BroadCastAgentState { agent_info })
+            .unwrap();
     }
 }
