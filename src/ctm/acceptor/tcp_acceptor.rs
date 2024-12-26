@@ -14,61 +14,6 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use super::Acceptor;
 
 ///
-/// 클라이언트 TCP 스트림
-///
-enum ClientStream {
-    Plain { stream: TcpStream },
-    Secure { stream: TlsStream<TcpStream> },
-}
-
-impl ClientStream {
-    ///
-    /// 데이터 전송
-    ///
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
-        match self {
-            ClientStream::Plain { ref mut stream } => Ok(stream.write(buffer).await?),
-            ClientStream::Secure { ref mut stream } => Ok(stream.write(buffer).await?),
-        }
-    }
-
-    ///
-    /// 데이터 수신
-    ///
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
-        match self {
-            ClientStream::Plain { stream } => Ok(stream.read(buffer).await?),
-            ClientStream::Secure { stream } => Ok(stream.read(buffer).await?),
-        }
-    }
-
-    ///
-    /// 클라이언트 핸들링
-    ///
-    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut buffer = vec![0_u8; 4_096];
-        loop {
-            match timeout(Duration::from_millis(10), self.read(&mut buffer)).await {
-                Ok(Ok(n)) if n == 0 => {
-                    break;
-                }
-                Ok(Ok(n)) => {
-                    log::info!("Client send. {:?}", &buffer[0..n]);
-                }
-                Ok(Err(e)) => {
-                    log::error!("TCP Client error. {:?}", e);
-                    break;
-                }
-                Err(_) => {}
-            }
-        }
-
-        #[allow(unreachable_code)]
-        Ok(())
-    }
-}
-
-///
 /// TCP Acceptor
 ///
 pub struct TCPAcceptor {
@@ -143,6 +88,7 @@ impl Acceptor for TCPAcceptor {
                         },
                     };
 
+                    // 접속된 클라이언트 핸들링
                     tokio::spawn(async move {
                         client_stream.handle().await.unwrap();
                         log::info!("TCP client disconnected. client_addr: {:?}", client_addr);
@@ -155,6 +101,61 @@ impl Acceptor for TCPAcceptor {
             }
         }
 
+        Ok(())
+    }
+}
+
+///
+/// 클라이언트 TCP 스트림
+///
+enum ClientStream {
+    Plain { stream: TcpStream },
+    Secure { stream: TlsStream<TcpStream> },
+}
+
+impl ClientStream {
+    ///
+    /// 데이터 전송
+    ///
+    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
+        match self {
+            ClientStream::Plain { ref mut stream } => Ok(stream.write(buffer).await?),
+            ClientStream::Secure { ref mut stream } => Ok(stream.write(buffer).await?),
+        }
+    }
+
+    ///
+    /// 데이터 수신
+    ///
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        match self {
+            ClientStream::Plain { stream } => Ok(stream.read(buffer).await?),
+            ClientStream::Secure { stream } => Ok(stream.read(buffer).await?),
+        }
+    }
+
+    ///
+    /// 클라이언트 핸들링
+    ///
+    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut buffer = vec![0_u8; 4_096];
+        loop {
+            match timeout(Duration::from_millis(10), self.read(&mut buffer)).await {
+                Ok(Ok(n)) if n == 0 => {
+                    break;
+                }
+                Ok(Ok(n)) => {
+                    log::info!("Client send. {:?}", &buffer[0..n]);
+                }
+                Ok(Err(e)) => {
+                    log::error!("TCP Client error. {:?}", e);
+                    break;
+                }
+                Err(_) => {}
+            }
+        }
+
+        #[allow(unreachable_code)]
         Ok(())
     }
 }
