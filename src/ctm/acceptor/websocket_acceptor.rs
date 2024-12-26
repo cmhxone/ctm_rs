@@ -324,7 +324,7 @@ impl ClientStream {
                 send_buffer.push(((length & 0x00FF_0000_0000_0000) >> 48) as u8);
                 send_buffer.push(((length & 0x0000_FF00_0000_0000) >> 40) as u8);
                 send_buffer.push(((length & 0x0000_00FF_0000_0000) >> 32) as u8);
-                send_buffer.push(((length & 0x0000_0000_FF00_0000) >> 24) as u8)
+                send_buffer.push(((length & 0x0000_0000_FF00_0000) >> 24) as u8);
                 send_buffer.push(((length & 0x0000_0000_00FF_0000) >> 16) as u8);
                 send_buffer.push(((length & 0x0000_0000_0000_FF00) >> 8) as u8);
                 send_buffer.push((length & 0x0000_0000_0000_00FF) as u8);
