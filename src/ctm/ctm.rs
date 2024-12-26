@@ -12,6 +12,7 @@ use tokio::{
 
 use crate::{
     cisco::{
+        client_event::agent_state_event::AgentStateEvent,
         control::query_agent_state_conf::QueryAgentStateConf, session::OpenConf,
         supervisor::agent_team_config_event::AgentTeamConfigEvent, Deserializable, MessageType,
     },
@@ -64,8 +65,9 @@ impl CTM {
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         self.cti_client.connect().await;
 
+        let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
         tokio::spawn(async move {
-            let tcp_acceptor = TCPAcceptor::new().await.unwrap();
+            let tcp_acceptor = TCPAcceptor::new(broker_event_channel_rx).await.unwrap();
 
             tcp_acceptor.accept().await.unwrap();
         });
@@ -217,6 +219,47 @@ impl CTM {
                                     None => {}
                                 };
                             }
+                            // AGENT_STATE_EVENT 메시지 수신
+                            MessageType::AGENT_STATE_EVENT => {
+                                let (_, agent_state_event) =
+                                    AgentStateEvent::deserialize(&mut data);
+
+                                log::info!("{:?}", agent_state_event);
+
+                                let agent_id = agent_state_event.agent_id.unwrap().data;
+                                let agent_state = agent_state_event.agent_state;
+                                let icm_agent_id = agent_state_event.icm_agent_id;
+                                let skill_group_id = agent_state_event.skill_group_id;
+                                let agent_extension =
+                                    agent_state_event.agent_extension.unwrap().data;
+                                let direction = agent_state_event.direction.unwrap().data;
+                                let reason_code = agent_state_event.event_reason_code;
+                                let state_duration = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+                                let state_duration =
+                                    state_duration - agent_state_event.state_duration as u64;
+
+                                match self.agent_info_map.get_mut(&agent_id) {
+                                    Some(agent_info) => {
+                                        agent_info.agent_state = agent_state;
+                                        agent_info.skill_group_id = skill_group_id as u16;
+                                        agent_info.icm_agent_id = icm_agent_id;
+                                        agent_info.agent_extension = agent_extension;
+                                        agent_info.direction = direction;
+                                        agent_info.reason_code = reason_code;
+                                        agent_info.state_duration = state_duration;
+
+                                        // 상담직원 이벤트 전송
+                                        Self::broadcast_agent_info(
+                                            self.broker_event_channel_tx.clone(),
+                                            agent_info.clone(),
+                                        );
+                                    }
+                                    None => {}
+                                }
+                            }
                             // 처리되지 않은 메시지 수신
                             message_type => {
                                 log::info!(
@@ -246,5 +289,6 @@ impl CTM {
         broker_event_channel_tx
             .send(BrokerEvent::BroadCastAgentState { agent_info })
             .unwrap();
+        log::debug!("Broadcasted agent info event.");
     }
 }

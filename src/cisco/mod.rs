@@ -1,12 +1,13 @@
+pub mod client_event;
+pub mod control;
 pub mod deserializable;
 pub mod floating_field;
 pub mod message_type;
 pub mod mhdr;
 pub mod serializable;
 pub mod session;
-pub mod tag_values;
 pub mod supervisor;
-pub mod control;
+pub mod tag_values;
 
 pub use deserializable::Deserializable;
 pub use floating_field::FloatingField;

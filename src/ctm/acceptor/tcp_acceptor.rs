@@ -4,12 +4,16 @@ use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
     ServerConfig,
 };
+use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::broadcast,
     time::timeout,
 };
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
+
+use crate::event::broker_event::BrokerEvent;
 
 use super::Acceptor;
 
@@ -19,13 +23,16 @@ use super::Acceptor;
 pub struct TCPAcceptor {
     tcp_listener: TcpListener,
     tls_acceptor: Option<TlsAcceptor>,
+    broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
 }
 
 impl TCPAcceptor {
     ///
     /// TCPAcceptor 생성
     ///
-    pub async fn new() -> Result<Self, Box<dyn Error>> {
+    pub async fn new(
+        broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+    ) -> Result<Self, Box<dyn Error>> {
         let ssl_enabled = dotenv::var("TCP_ACCEPTOR_SECURE")
             .unwrap_or("false".to_string())
             .parse::<bool>()
@@ -59,6 +66,7 @@ impl TCPAcceptor {
         Ok(Self {
             tcp_listener,
             tls_acceptor,
+            broker_event_channel_rx,
         })
     }
 }
@@ -89,8 +97,9 @@ impl Acceptor for TCPAcceptor {
                     };
 
                     // 접속된 클라이언트 핸들링
+                    let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
                     tokio::spawn(async move {
-                        client_stream.handle().await.unwrap();
+                        client_stream.handle(broker_event_channel_rx).await.unwrap();
                         log::info!("TCP client disconnected. client_addr: {:?}", client_addr);
                     });
                 }
@@ -137,7 +146,10 @@ impl ClientStream {
     ///
     /// 클라이언트 핸들링
     ///
-    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn handle(
+        &mut self,
+        mut broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+    ) -> Result<(), Box<dyn Error>> {
         let mut buffer = vec![0_u8; 4_096];
         loop {
             match timeout(Duration::from_millis(10), self.read(&mut buffer)).await {
@@ -149,6 +161,25 @@ impl ClientStream {
                 }
                 Ok(Err(e)) => {
                     log::error!("TCP Client error. {:?}", e);
+                    break;
+                }
+                Err(_) => {}
+            }
+
+            match timeout(Duration::from_millis(10), broker_event_channel_rx.recv()).await {
+                Ok(Ok(event)) => match event {
+                    BrokerEvent::BroadCastAgentState { agent_info } => {
+                        let mut buffer = Vec::new();
+                        agent_info
+                            .serialize(&mut rmp_serde::Serializer::new(&mut buffer))
+                            .unwrap();
+
+                        self.write(&buffer).await.unwrap();
+                    }
+                    _ => {}
+                },
+                Ok(Err(e)) => {
+                    log::error!("Unable to read broker message. {:?}", e);
                     break;
                 }
                 Err(_) => {}
