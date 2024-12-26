@@ -1,4 +1,4 @@
-use std::{error::Error, fs::File, io::BufReader, sync::Arc};
+use std::{error::Error, sync::Arc};
 
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
@@ -12,12 +12,18 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
 use super::Acceptor;
 
+///
+/// 클라이언트 TCP 스트림
+///
 enum ClientStream {
     Plain { stream: TcpStream },
     Secure { stream: TlsStream<TcpStream> },
 }
 
 impl ClientStream {
+    ///
+    /// 데이터 전송
+    ///
     pub async fn write(self, buffer: &[u8]) -> Result<(), Box<dyn Error>> {
         match self {
             ClientStream::Plain { mut stream } => {
@@ -32,12 +38,18 @@ impl ClientStream {
     }
 }
 
+///
+/// TCP Acceptor
+///
 pub struct TCPAcceptor {
     tcp_listener: TcpListener,
     tls_acceptor: Option<TlsAcceptor>,
 }
 
 impl TCPAcceptor {
+    ///
+    /// TCPAcceptor 생성
+    ///
     pub async fn new() -> Result<Self, Box<dyn Error>> {
         let ssl_enabled = dotenv::var("TCP_ACCEPTOR_SECURE")
             .unwrap_or("false".to_string())
@@ -77,39 +89,41 @@ impl TCPAcceptor {
 }
 
 impl Acceptor for TCPAcceptor {
+    ///
+    /// 클라이언트 수신
+    ///
     async fn accept(self) -> Result<(), Box<dyn Error>> {
         log::info!("TCP server starts accepting");
-        tokio::spawn(async move {
-            loop {
-                match self.tcp_listener.accept().await {
-                    Ok((native_stream, client_addr)) => {
-                        log::info!("TCP client connected. client_addr: {:?}", client_addr);
 
-                        // TLS 적용 여부에 따라 클라이언트 소켓 스트림을 구분
-                        let client_stream = match self.tls_acceptor {
-                            Some(ref tls) => ClientStream::Secure {
-                                stream: match tls.accept(native_stream).await {
-                                    Ok(stream) => stream,
-                                    Err(_) => continue,
-                                },
-                            },
-                            None => ClientStream::Plain {
-                                stream: native_stream,
-                            },
-                        };
+        loop {
+            match self.tcp_listener.accept().await {
+                Ok((native_stream, client_addr)) => {
+                    log::info!("TCP client connected. client_addr: {:?}", client_addr);
 
-                        client_stream
-                            .write("hello from ctm".as_bytes())
-                            .await
-                            .unwrap();
-                    }
-                    Err(e) => {
-                        log::error!("Unable to accept TCP client connection. {:?}", e);
-                        break;
-                    }
+                    // TLS 적용 여부에 따라 클라이언트 소켓 스트림을 구분
+                    let client_stream = match self.tls_acceptor {
+                        Some(ref tls) => ClientStream::Secure {
+                            stream: match tls.accept(native_stream).await {
+                                Ok(stream) => stream,
+                                Err(_) => continue,
+                            },
+                        },
+                        None => ClientStream::Plain {
+                            stream: native_stream,
+                        },
+                    };
+
+                    client_stream
+                        .write("hello from ctm".as_bytes())
+                        .await
+                        .unwrap();
+                }
+                Err(e) => {
+                    log::error!("Unable to accept TCP client connection. {:?}", e);
+                    break;
                 }
             }
-        });
+        }
 
         Ok(())
     }
