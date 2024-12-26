@@ -39,7 +39,7 @@ pub struct TCPAcceptor {
 
 impl TCPAcceptor {
     pub async fn new() -> Result<Self, Box<dyn Error>> {
-        let ssl_enabled = dotenv::var("TCP_ACCEPTOR_ENABLED")
+        let ssl_enabled = dotenv::var("TCP_ACCEPTOR_SECURE")
             .unwrap_or("false".to_string())
             .parse::<bool>()
             .unwrap_or(false);
