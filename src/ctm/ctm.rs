@@ -19,7 +19,10 @@ use crate::{
     event::{broker_event::BrokerEvent, cti_event::CTIEvent},
 };
 
-use super::agent_info::AgentInfo;
+use super::{
+    acceptor::{tcp_acceptor::TCPAcceptor, Acceptor},
+    agent_info::AgentInfo,
+};
 
 pub struct CTM {
     is_active: bool,
@@ -60,6 +63,12 @@ impl CTM {
 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         self.cti_client.connect().await;
+
+        tokio::spawn(async move {
+            let tcp_acceptor = TCPAcceptor::new().await.unwrap();
+
+            tcp_acceptor.accept().await.unwrap();
+        });
 
         loop {
             match timeout(Duration::from_millis(10), self.cti_event_channel_rx.recv()).await {
