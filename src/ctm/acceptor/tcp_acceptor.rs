@@ -12,6 +12,7 @@ use tokio::{
     time::timeout,
 };
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use uuid::Uuid;
 
 use crate::event::{broker_event::BrokerEvent, client_event::ClientEvent};
 
@@ -84,7 +85,12 @@ impl Acceptor for TCPAcceptor {
         loop {
             match self.tcp_listener.accept().await {
                 Ok((native_stream, client_addr)) => {
-                    log::info!("TCP client connected. client_addr: {:?}", client_addr);
+                    let uuid = Uuid::now_v7();
+                    log::info!(
+                        "TCP client connected. client_addr: {:?}, id: {}",
+                        client_addr,
+                        uuid
+                    );
 
                     // TLS 적용 여부에 따라 클라이언트 소켓 스트림을 구분
                     let mut client_stream = match self.tls_acceptor {
@@ -93,9 +99,11 @@ impl Acceptor for TCPAcceptor {
                                 Ok(stream) => stream,
                                 Err(_) => continue,
                             },
+                            id: uuid,
                         },
                         None => ClientStream::Plain {
                             stream: native_stream,
+                            id: uuid,
                         },
                     };
 
@@ -125,18 +133,40 @@ impl Acceptor for TCPAcceptor {
 /// 클라이언트 TCP 스트림
 ///
 enum ClientStream {
-    Plain { stream: TcpStream },
-    Secure { stream: TlsStream<TcpStream> },
+    Plain {
+        stream: TcpStream,
+        id: Uuid,
+    },
+    Secure {
+        stream: TlsStream<TcpStream>,
+        id: Uuid,
+    },
 }
 
 impl ClientStream {
+    ///
+    /// ID 반환
+    ///
+    fn get_id(&self) -> &Uuid {
+        match self {
+            ClientStream::Plain { stream: _, id } => id,
+            ClientStream::Secure { stream: _, id } => id,
+        }
+    }
+
     ///
     /// 데이터 전송
     ///
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { ref mut stream } => Ok(stream.write(buffer).await?),
-            ClientStream::Secure { ref mut stream } => Ok(stream.write(buffer).await?),
+            ClientStream::Plain {
+                ref mut stream,
+                id: _,
+            } => Ok(stream.write(buffer).await?),
+            ClientStream::Secure {
+                ref mut stream,
+                id: _,
+            } => Ok(stream.write(buffer).await?),
         }
     }
 
@@ -145,8 +175,8 @@ impl ClientStream {
     ///
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { stream } => Ok(stream.read(buffer).await?),
-            ClientStream::Secure { stream } => Ok(stream.read(buffer).await?),
+            ClientStream::Plain { stream, id: _ } => Ok(stream.read(buffer).await?),
+            ClientStream::Secure { stream, id: _ } => Ok(stream.read(buffer).await?),
         }
     }
 
@@ -161,7 +191,9 @@ impl ClientStream {
         let mut buffer = vec![0_u8; 4_096];
 
         client_event_channel_tx
-            .send(ClientEvent::Connect {})
+            .send(ClientEvent::Connect {
+                id: self.get_id().clone(),
+            })
             .await
             .unwrap();
 
@@ -184,7 +216,20 @@ impl ClientStream {
             // 브로킹 이벤트 수신
             match timeout(Duration::from_millis(10), broker_event_channel_rx.recv()).await {
                 Ok(Ok(event)) => match event {
-                    BrokerEvent::BroadCastAgentState { agent_info } => {
+                    BrokerEvent::BroadCastAgentState {
+                        agent_info,
+                        client_id,
+                    } => {
+                        match client_id {
+                            // id 값이 있을땐 매칭되지 않을 경우 처리하지 않음
+                            Some(id) => {
+                                if &id != self.get_id() {
+                                    continue;
+                                }
+                            }
+                            None => {}
+                        }
+
                         let mut buffer = Vec::new();
                         agent_info
                             .serialize(&mut rmp_serde::Serializer::new(&mut buffer))

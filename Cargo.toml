@@ -14,3 +14,4 @@ rustls-pemfile = "2.2.0"
 serde = { version = "1.0.216", features = ["derive", "serde_derive"] }
 tokio = { version = "1.42.0", features = ["full"] }
 tokio-rustls = "0.26.1"
+uuid = { version = "1.11.0", features = ["v7"] }

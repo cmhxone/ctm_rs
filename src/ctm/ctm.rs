@@ -9,6 +9,7 @@ use tokio::{
     sync::{broadcast, mpsc},
     time::timeout,
 };
+use uuid::Uuid;
 
 use crate::{
     cisco::{
@@ -166,6 +167,7 @@ impl CTM {
 
                                                     // 상담직원 이벤트 전송
                                                     Self::broadcast_agent_info(
+                                                        None,
                                                         self.broker_event_channel_tx.clone(),
                                                         agent_info.clone(),
                                                     );
@@ -189,6 +191,7 @@ impl CTM {
 
                                                     // 상담직원 이벤트 전송
                                                     Self::broadcast_agent_info(
+                                                        None,
                                                         self.broker_event_channel_tx.clone(),
                                                         agent_info,
                                                     );
@@ -222,6 +225,7 @@ impl CTM {
 
                                         // 상담직원 이벤트 전송
                                         Self::broadcast_agent_info(
+                                            None,
                                             self.broker_event_channel_tx.clone(),
                                             agent_info.clone(),
                                         );
@@ -263,6 +267,7 @@ impl CTM {
 
                                         // 상담직원 이벤트 전송
                                         Self::broadcast_agent_info(
+                                            None,
                                             self.broker_event_channel_tx.clone(),
                                             agent_info.clone(),
                                         );
@@ -292,18 +297,19 @@ impl CTM {
             .await
             {
                 Ok(Some(event)) => match event {
-                    ClientEvent::Connect {} => {
+                    ClientEvent::Connect { id } => {
                         self.agent_info_map.iter().for_each(|(_, agent_info)| {
                             Self::broadcast_agent_info(
+                                Some(id),
                                 self.broker_event_channel_tx.clone(),
                                 agent_info.clone(),
                             );
                         });
                     }
-                    ClientEvent::Receive { data } => {
-                        log::debug!("Client sent. {:?}", data);
+                    ClientEvent::Receive { data, id } => {
+                        log::debug!("Client sent. id: {}, data: {:?}", id, data);
                     }
-                    ClientEvent::Disconnect {} => {}
+                    ClientEvent::Disconnect { id: _ } => {}
                 },
                 Ok(None) => {}
                 Err(_) => {}
@@ -318,11 +324,15 @@ impl CTM {
     /// 상담직원 상태를 브로커 채널에 전송한다
     ///
     fn broadcast_agent_info(
+        target_client_id: Option<Uuid>,
         broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
         agent_info: AgentInfo,
     ) {
         broker_event_channel_tx
-            .send(BrokerEvent::BroadCastAgentState { agent_info })
+            .send(BrokerEvent::BroadCastAgentState {
+                agent_info,
+                client_id: target_client_id,
+            })
             .unwrap();
         log::debug!("Broadcasted agent info event.");
     }

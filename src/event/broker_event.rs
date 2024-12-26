@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::ctm::agent_info::AgentInfo;
 
 ///
@@ -6,6 +8,7 @@ use crate::ctm::agent_info::AgentInfo;
 #[derive(Debug, Clone)]
 pub enum BrokerEvent {
     BroadCastAgentState {
+        client_id: Option<Uuid>,
         agent_info: AgentInfo,
     },
     RequestAgentStateEvent {
