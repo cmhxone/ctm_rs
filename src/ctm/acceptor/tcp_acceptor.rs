@@ -8,12 +8,12 @@ use serde::Serialize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::broadcast,
+    sync::{broadcast, mpsc},
     time::timeout,
 };
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
-use crate::event::broker_event::BrokerEvent;
+use crate::event::{broker_event::BrokerEvent, client_event::ClientEvent};
 
 use super::Acceptor;
 
@@ -24,6 +24,7 @@ pub struct TCPAcceptor {
     tcp_listener: TcpListener,
     tls_acceptor: Option<TlsAcceptor>,
     broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+    client_event_channel_tx: mpsc::Sender<ClientEvent>,
 }
 
 impl TCPAcceptor {
@@ -32,6 +33,7 @@ impl TCPAcceptor {
     ///
     pub async fn new(
         broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+        client_event_channel_tx: mpsc::Sender<ClientEvent>,
     ) -> Result<Self, Box<dyn Error>> {
         let ssl_enabled = dotenv::var("TCP_ACCEPTOR_SECURE")
             .unwrap_or("false".to_string())
@@ -67,6 +69,7 @@ impl TCPAcceptor {
             tcp_listener,
             tls_acceptor,
             broker_event_channel_rx,
+            client_event_channel_tx,
         })
     }
 }
@@ -98,8 +101,12 @@ impl Acceptor for TCPAcceptor {
 
                     // 접속된 클라이언트 핸들링
                     let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
+                    let client_event_channel_tx = self.client_event_channel_tx.clone();
                     tokio::spawn(async move {
-                        client_stream.handle(broker_event_channel_rx).await.unwrap();
+                        client_stream
+                            .handle(broker_event_channel_rx, client_event_channel_tx)
+                            .await
+                            .unwrap();
                         log::info!("TCP client disconnected. client_addr: {:?}", client_addr);
                     });
                 }
@@ -149,9 +156,17 @@ impl ClientStream {
     pub async fn handle(
         &mut self,
         mut broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
+        client_event_channel_tx: mpsc::Sender<ClientEvent>,
     ) -> Result<(), Box<dyn Error>> {
         let mut buffer = vec![0_u8; 4_096];
+
+        client_event_channel_tx
+            .send(ClientEvent::Connect {})
+            .await
+            .unwrap();
+
         loop {
+            // 소켓 데이터 수신
             match timeout(Duration::from_millis(10), self.read(&mut buffer)).await {
                 Ok(Ok(n)) if n == 0 => {
                     break;
@@ -166,6 +181,7 @@ impl ClientStream {
                 Err(_) => {}
             }
 
+            // 브로킹 이벤트 수신
             match timeout(Duration::from_millis(10), broker_event_channel_rx.recv()).await {
                 Ok(Ok(event)) => match event {
                     BrokerEvent::BroadCastAgentState { agent_info } => {

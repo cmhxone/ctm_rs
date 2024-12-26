@@ -17,7 +17,7 @@ use crate::{
         supervisor::agent_team_config_event::AgentTeamConfigEvent, Deserializable, MessageType,
     },
     ctm::cti_client::CTIClient,
-    event::{broker_event::BrokerEvent, cti_event::CTIEvent},
+    event::{broker_event::BrokerEvent, client_event::ClientEvent, cti_event::CTIEvent},
 };
 
 use super::{
@@ -32,6 +32,8 @@ pub struct CTM {
     cti_event_channel_tx: mpsc::Sender<CTIEvent>,
     broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
     broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
+    client_event_channel_rx: mpsc::Receiver<ClientEvent>,
+    client_event_channel_tx: mpsc::Sender<ClientEvent>,
     agent_info_map: HashMap<String, AgentInfo>,
 }
 
@@ -41,6 +43,8 @@ impl CTM {
         let (cti_event_channel_tx, cti_event_channel_rx) = mpsc::channel::<CTIEvent>(1_024);
         let (broker_event_channel_tx, broker_event_channel_rx) =
             broadcast::channel::<BrokerEvent>(1_024);
+        let (client_event_channel_tx, client_event_channel_rx) =
+            mpsc::channel::<ClientEvent>(4_096);
 
         let cti_client = CTIClient::new(
             is_active,
@@ -58,6 +62,8 @@ impl CTM {
             cti_event_channel_tx,
             broker_event_channel_rx,
             broker_event_channel_tx,
+            client_event_channel_rx,
+            client_event_channel_tx,
             agent_info_map,
         })
     }
@@ -66,13 +72,17 @@ impl CTM {
         self.cti_client.connect().await;
 
         let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
+        let client_event_channel_tx = self.client_event_channel_tx.clone();
         tokio::spawn(async move {
-            let tcp_acceptor = TCPAcceptor::new(broker_event_channel_rx).await.unwrap();
+            let tcp_acceptor = TCPAcceptor::new(broker_event_channel_rx, client_event_channel_tx)
+                .await
+                .unwrap();
 
             tcp_acceptor.accept().await.unwrap();
         });
 
         loop {
+            // CTI 이벤트 채널 데이터 수신
             match timeout(Duration::from_millis(10), self.cti_event_channel_rx.recv()).await {
                 Ok(Some(event)) => match event {
                     // HeartBeat 요청 전송 시간 이벤트 수신
@@ -273,6 +283,31 @@ impl CTM {
                 Ok(None) => {}
                 Err(_) => {}
             };
+
+            // 클라이언트 이벤트 채널 수신
+            match timeout(
+                Duration::from_millis(10),
+                self.client_event_channel_rx.recv(),
+            )
+            .await
+            {
+                Ok(Some(event)) => match event {
+                    ClientEvent::Connect {} => {
+                        self.agent_info_map.iter().for_each(|(_, agent_info)| {
+                            Self::broadcast_agent_info(
+                                self.broker_event_channel_tx.clone(),
+                                agent_info.clone(),
+                            );
+                        });
+                    }
+                    ClientEvent::Receive { data } => {
+                        log::debug!("Client sent. {:?}", data);
+                    }
+                    ClientEvent::Disconnect {} => {}
+                },
+                Ok(None) => {}
+                Err(_) => {}
+            }
         }
 
         #[allow(unreachable_code)]
