@@ -1,10 +1,12 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
+use base64::{prelude::BASE64_STANDARD, Engine};
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
     ServerConfig,
 };
 use serde::Serialize;
+use sha1::{Digest, Sha1};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -145,9 +147,8 @@ impl Acceptor for WebsocketAcceptor {
                         };
 
                         // 웹 소켓 키를 사용해 Accept 키를 만든다
-                        // FIXME: 여기 정규식 제대로 안 먹음
                         let header_regex =
-                            regex::Regex::new(r"^Sec-WebSocket-Key: ([0-9A-Za-z+/=]*)$").unwrap();
+                            regex::Regex::new(r"Sec-WebSocket-Key: ([0-9a-zA-Z+=/]*)").unwrap();
                         let websocket_key = match header_regex.captures(&request_header) {
                             Some(captures) => captures.get(1).unwrap().as_str(),
                             None => {
@@ -161,14 +162,30 @@ impl Acceptor for WebsocketAcceptor {
                                 return;
                             }
                         };
-
-                        log::debug!(
-                            "Websocket client key: {}, client_addr: {:?}",
-                            websocket_key,
-                            client_addr
-                        );
+                        log::debug!("Websocket client request to accept. client_addr: {:?}, websocket_key: '{}'", client_addr, websocket_key);
 
                         // 웹소켓 Upgrade 응답 메시지 전송
+                        let mut hasher = Sha1::new();
+                        hasher.update(format!(
+                            "{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", // RFC 6455
+                            websocket_key
+                        ));
+                        let websocket_accept = hasher.finalize();
+                        let websocket_accept = BASE64_STANDARD.encode(websocket_accept);
+
+                        log::debug!("Websocket client accept key: {}", websocket_accept);
+
+                        // 웹소켓 101 Switching Protocols 전송
+                        client_stream
+                            .write(
+                                format!(
+                                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-Websocket-Accept: {}\r\n\r\n",
+                                    websocket_accept
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
 
                         client_stream
                             .handle(broker_event_channel_rx, client_event_channel_tx)
@@ -231,8 +248,8 @@ impl ClientStream {
     ///
     async fn write_binary(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { stream, id } => todo!(),
-            ClientStream::Secure { stream, id } => todo!(),
+            ClientStream::Plain { stream, id: _ } => todo!(),
+            ClientStream::Secure { stream, id: _ } => todo!(),
         }
     }
 
@@ -241,8 +258,8 @@ impl ClientStream {
     ///
     async fn write_text(&mut self, message: String) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { stream, id } => todo!(),
-            ClientStream::Secure { stream, id } => todo!(),
+            ClientStream::Plain { stream, id: _ } => todo!(),
+            ClientStream::Secure { stream, id: _ } => todo!(),
         }
     }
 
