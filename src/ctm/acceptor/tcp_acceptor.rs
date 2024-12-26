@@ -1,12 +1,13 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
     ServerConfig,
 };
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    time::timeout,
 };
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
@@ -24,16 +25,45 @@ impl ClientStream {
     ///
     /// 데이터 전송
     ///
-    pub async fn write(self, buffer: &[u8]) -> Result<(), Box<dyn Error>> {
+    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { mut stream } => {
-                stream.write(buffer).await?;
-            }
-            ClientStream::Secure { mut stream } => {
-                stream.write(buffer).await?;
+            ClientStream::Plain { ref mut stream } => Ok(stream.write(buffer).await?),
+            ClientStream::Secure { ref mut stream } => Ok(stream.write(buffer).await?),
+        }
+    }
+
+    ///
+    /// 데이터 수신
+    ///
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+        match self {
+            ClientStream::Plain { stream } => Ok(stream.read(buffer).await?),
+            ClientStream::Secure { stream } => Ok(stream.read(buffer).await?),
+        }
+    }
+
+    ///
+    /// 클라이언트 핸들링
+    ///
+    pub async fn handle(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut buffer = vec![0_u8; 4_096];
+        loop {
+            match timeout(Duration::from_millis(10), self.read(&mut buffer)).await {
+                Ok(Ok(n)) if n == 0 => {
+                    break;
+                }
+                Ok(Ok(n)) => {
+                    log::info!("Client send. {:?}", &buffer[0..n]);
+                }
+                Ok(Err(e)) => {
+                    log::error!("TCP Client error. {:?}", e);
+                    break;
+                }
+                Err(_) => {}
             }
         }
 
+        #[allow(unreachable_code)]
         Ok(())
     }
 }
@@ -101,7 +131,7 @@ impl Acceptor for TCPAcceptor {
                     log::info!("TCP client connected. client_addr: {:?}", client_addr);
 
                     // TLS 적용 여부에 따라 클라이언트 소켓 스트림을 구분
-                    let client_stream = match self.tls_acceptor {
+                    let mut client_stream = match self.tls_acceptor {
                         Some(ref tls) => ClientStream::Secure {
                             stream: match tls.accept(native_stream).await {
                                 Ok(stream) => stream,
@@ -113,10 +143,10 @@ impl Acceptor for TCPAcceptor {
                         },
                     };
 
-                    client_stream
-                        .write("hello from ctm".as_bytes())
-                        .await
-                        .unwrap();
+                    tokio::spawn(async move {
+                        client_stream.handle().await.unwrap();
+                        log::info!("TCP client disconnected. client_addr: {:?}", client_addr);
+                    });
                 }
                 Err(e) => {
                     log::error!("Unable to accept TCP client connection. {:?}", e);
