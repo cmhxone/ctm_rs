@@ -1,5 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
@@ -85,8 +86,9 @@ impl WebsocketAcceptor {
     }
 }
 
+#[async_trait]
 impl Acceptor for WebsocketAcceptor {
-    async fn accept(self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn accept(&self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Websocket server starts accepting");
 
         loop {

@@ -1,9 +1,10 @@
 [package]
 name = "ctm"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
+async-trait = "0.1.83"
 base64 = "0.22.1"
 dotenv = "0.15.0"
 log = "0.4.22"

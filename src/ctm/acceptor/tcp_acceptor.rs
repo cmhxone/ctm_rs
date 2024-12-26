@@ -1,5 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
     ServerConfig,
@@ -75,11 +76,12 @@ impl TCPAcceptor {
     }
 }
 
+#[async_trait]
 impl Acceptor for TCPAcceptor {
     ///
     /// 클라이언트 수신
     ///
-    async fn accept(self) -> Result<(), Box<dyn Error>> {
+    async fn accept(&self) -> Result<(), Box<dyn Error>> {
         log::info!("TCP server starts accepting");
 
         loop {

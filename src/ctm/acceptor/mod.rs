@@ -1,8 +1,11 @@
 use std::error::Error;
 
+use async_trait::async_trait;
+
 pub mod tcp_acceptor;
 pub mod websocket_acceptor;
 
-pub trait Acceptor {
-    async fn accept(self) -> Result<(), Box<dyn Error>>;
+#[async_trait]
+pub trait Acceptor: Send {
+    async fn accept(&self) -> Result<(), Box<dyn Error>>;
 }

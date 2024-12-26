@@ -72,26 +72,44 @@ impl CTM {
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         self.cti_client.connect().await;
 
-        let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
-        let client_event_channel_tx = self.client_event_channel_tx.clone();
-        tokio::spawn(async move {
-            let tcp_acceptor = TCPAcceptor::new(broker_event_channel_rx, client_event_channel_tx)
-                .await
-                .unwrap();
+        let mut acceptors: Vec<Box<dyn Acceptor>> = Vec::new();
 
-            tcp_acceptor.accept().await.unwrap();
-        });
+        // TCP Acceptor 생성
+        if dotenv::var("TCP_ACCEPTOR_ENABLED")
+            .unwrap_or("false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false)
+        {
+            let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
+            let client_event_channel_tx = self.client_event_channel_tx.clone();
 
-        let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
-        let client_event_channel_tx = self.client_event_channel_tx.clone();
-        tokio::spawn(async move {
-            let websocket_acceptor =
-                WebsocketAcceptor::new(broker_event_channel_rx, client_event_channel_tx)
-                    .await
-                    .unwrap();
+            match TCPAcceptor::new(broker_event_channel_rx, client_event_channel_tx).await {
+                Ok(acceptor) => acceptors.push(Box::new(acceptor)),
+                Err(_) => {}
+            }
+        }
 
-            websocket_acceptor.accept().await.unwrap();
-        });
+        // 웹 소켓 Acceptor 생성
+        if dotenv::var("WEBSOCKET_ACCEPTOR_ENABLED")
+            .unwrap_or("false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false)
+        {
+            let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
+            let client_event_channel_tx = self.client_event_channel_tx.clone();
+
+            match WebsocketAcceptor::new(broker_event_channel_rx, client_event_channel_tx).await {
+                Ok(acceptor) => acceptors.push(Box::new(acceptor)),
+                Err(_) => {}
+            }
+        }
+
+        // Acceptor 실행
+        for acceptor in acceptors {
+            tokio::spawn(async move {
+                acceptor.accept().await.unwrap();
+            });
+        }
 
         loop {
             // CTI 이벤트 채널 데이터 수신
