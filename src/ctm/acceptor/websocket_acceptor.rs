@@ -20,6 +20,21 @@ use crate::event::{broker_event::BrokerEvent, client_event::ClientEvent};
 
 use super::Acceptor;
 
+const WEBSOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"; // RFC 6455
+const WEBSOCKET_FIN_TRUE: u8 = 0x80;
+#[allow(unused)]
+const WEBSOCKET_FIN_FALSE: u8 = 0x00;
+#[allow(unused)]
+const WEBSOCKET_OP_CODE_CONTINUATION_FRAME: u8 = 0x00;
+const WEBSOCKET_OP_CODE_TEXT_FRAME: u8 = 0x01;
+const WEBSOCKET_OP_CODE_BINARY_FRAME: u8 = 0x02;
+#[allow(unused)]
+const WEBSOCKET_OP_CODE_CLOSE_FRAME: u8 = 0x08;
+#[allow(unused)]
+const WEBSOCKET_OP_CODE_PING_FRAME: u8 = 0x09;
+#[allow(unused)]
+const WEBSOCKET_OP_CODE_PONG_FRAME: u8 = 0x0A;
+
 pub struct WebsocketAcceptor {
     websocket_listener: TcpListener,
     tls_acceptor: Option<TlsAcceptor>,
@@ -166,10 +181,7 @@ impl Acceptor for WebsocketAcceptor {
 
                         // 웹소켓 Upgrade 응답 메시지 전송
                         let mut hasher = Sha1::new();
-                        hasher.update(format!(
-                            "{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", // RFC 6455
-                            websocket_key
-                        ));
+                        hasher.update(format!("{}{}", websocket_key, WEBSOCKET_GUID));
                         let websocket_accept = hasher.finalize();
                         let websocket_accept = BASE64_STANDARD.encode(websocket_accept);
 
@@ -247,19 +259,84 @@ impl ClientStream {
     /// 이진 데이터 전송
     ///
     async fn write_binary(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
+        let length = buffer.len();
+        let mut send_buffer = Vec::new();
+
+        // 웹 소켓 프레임 헤더 추가
+        send_buffer.push(WEBSOCKET_FIN_TRUE | WEBSOCKET_OP_CODE_BINARY_FRAME);
+
+        // 웹 소켓 길이 패킷 추가
+        match length {
+            0_usize..126_usize => {
+                send_buffer.push(length as u8);
+            }
+            126_usize..65535_usize => {
+                send_buffer.push(126_u8);
+                send_buffer.push(((length | 0xFF00) >> 8) as u8);
+                send_buffer.push((length | 0x00FF) as u8);
+            }
+            65535_usize.. => {
+                send_buffer.push(127_u8);
+                send_buffer.push(((length | 0xFF00_0000_0000_0000) >> 56) as u8);
+                send_buffer.push(((length | 0x00FF_0000_0000_0000) >> 48) as u8);
+                send_buffer.push(((length | 0x0000_FF00_0000_0000) >> 40) as u8);
+                send_buffer.push(((length | 0x0000_00FF_0000_0000) >> 32) as u8);
+                send_buffer.push(((length | 0x0000_0000_FF00_0000) >> 24) as u8);
+                send_buffer.push(((length | 0x0000_0000_00FF_0000) >> 16) as u8);
+                send_buffer.push(((length | 0x0000_0000_0000_FF00) >> 8) as u8);
+                send_buffer.push((length | 0x0000_0000_0000_00FF) as u8);
+            }
+        };
+
+        // 웹 소켓 데이터 추가
+        send_buffer.append(&mut buffer.to_vec());
+
         match self {
-            ClientStream::Plain { stream, id: _ } => todo!(),
-            ClientStream::Secure { stream, id: _ } => todo!(),
+            ClientStream::Plain { stream, id: _ } => Ok(stream.write(&send_buffer).await?),
+            ClientStream::Secure { stream, id: _ } => Ok(stream.write(&send_buffer).await?),
         }
     }
 
     ///
     /// 텍스트 데이터 전송
     ///
+    #[allow(unused)]
     async fn write_text(&mut self, message: String) -> Result<usize, Box<dyn Error>> {
+        let length = message.len();
+        let mut send_buffer = Vec::new();
+
+        // 웹 소켓 프레임 헤더 추가
+        send_buffer.push(WEBSOCKET_FIN_TRUE | WEBSOCKET_OP_CODE_TEXT_FRAME);
+
+        // 웹 소켓 길이 패킷 추가
+        match length {
+            0_usize..126_usize => {
+                send_buffer.push(length as u8);
+            }
+            126_usize..65535_usize => {
+                send_buffer.push(126_u8);
+                send_buffer.push(((length | 0xFF00) >> 8) as u8);
+                send_buffer.push((length | 0x00FF) as u8);
+            }
+            65535_usize.. => {
+                send_buffer.push(127_u8);
+                send_buffer.push(((length | 0xFF00_0000_0000_0000) >> 56) as u8);
+                send_buffer.push(((length | 0x00FF_0000_0000_0000) >> 48) as u8);
+                send_buffer.push(((length | 0x0000_FF00_0000_0000) >> 40) as u8);
+                send_buffer.push(((length | 0x0000_00FF_0000_0000) >> 32) as u8);
+                send_buffer.push(((length | 0x0000_0000_FF00_0000) >> 24) as u8);
+                send_buffer.push(((length | 0x0000_0000_00FF_0000) >> 16) as u8);
+                send_buffer.push(((length | 0x0000_0000_0000_FF00) >> 8) as u8);
+                send_buffer.push((length | 0x0000_0000_0000_00FF) as u8);
+            }
+        };
+
+        // 웹 소켓 데이터 추가
+        send_buffer.append(&mut message.as_bytes().to_vec());
+
         match self {
-            ClientStream::Plain { stream, id: _ } => todo!(),
-            ClientStream::Secure { stream, id: _ } => todo!(),
+            ClientStream::Plain { stream, id: _ } => Ok(stream.write(&send_buffer).await?),
+            ClientStream::Secure { stream, id: _ } => Ok(stream.write(&send_buffer).await?),
         }
     }
 
@@ -337,6 +414,6 @@ impl ClientStream {
             }
         }
 
-        todo!()
+        Ok(())
     }
 }
