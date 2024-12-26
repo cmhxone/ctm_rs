@@ -39,6 +39,9 @@ pub struct CTM {
 }
 
 impl CTM {
+    ///
+    /// 새로운 CTM 구조체 생성
+    /// 
     pub async fn new() -> Result<Self, Box<dyn Error>> {
         let is_active = true;
         let (cti_event_channel_tx, cti_event_channel_rx) = mpsc::channel::<CTIEvent>(1_024);
@@ -69,6 +72,9 @@ impl CTM {
         })
     }
 
+    ///
+    /// CTM 서버 실행
+    /// 
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         self.cti_client.connect().await;
 
