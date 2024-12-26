@@ -190,6 +190,7 @@ impl ClientStream {
     ) -> Result<(), Box<dyn Error>> {
         let mut buffer = vec![0_u8; 4_096];
 
+        // 클라이언트 소켓 접속 이벤트 전송
         client_event_channel_tx
             .send(ClientEvent::Connect {
                 id: self.get_id().clone(),
