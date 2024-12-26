@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    acceptor::{tcp_acceptor::TCPAcceptor, Acceptor},
+    acceptor::{tcp_acceptor::TCPAcceptor, websocket_acceptor::WebsocketAcceptor, Acceptor},
     agent_info::AgentInfo,
 };
 
@@ -80,6 +80,17 @@ impl CTM {
                 .unwrap();
 
             tcp_acceptor.accept().await.unwrap();
+        });
+
+        let broker_event_channel_rx = self.broker_event_channel_rx.resubscribe();
+        let client_event_channel_tx = self.client_event_channel_tx.clone();
+        tokio::spawn(async move {
+            let websocket_acceptor =
+                WebsocketAcceptor::new(broker_event_channel_rx, client_event_channel_tx)
+                    .await
+                    .unwrap();
+
+            websocket_acceptor.accept().await.unwrap();
         });
 
         loop {
