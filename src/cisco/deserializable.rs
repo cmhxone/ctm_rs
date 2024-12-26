@@ -78,8 +78,6 @@ impl Deserializable for u32 {
 impl Deserializable for String {
     fn deserialize<Buffer: AsMut<[u8]>>(buffer: &mut Buffer) -> (Vec<u8>, Self) {
         let index = buffer.as_mut().iter().position(|&b| b == 0).unwrap();
-
-        log::debug!("buffer: {:?}, null_index: {}", buffer.as_mut(), index);
         let result = String::from_utf8(buffer.as_mut()[0..index].to_vec()).unwrap();
 
         (buffer.as_mut()[index + 1..].to_vec(), result)
