@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    error::Error,
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, error::Error, thread, time::Duration};
 
 use tokio::{
     sync::{broadcast, mpsc},
@@ -188,17 +183,13 @@ impl CTM {
 
                                             let agent_state =
                                                 agent.agent_state.clone().unwrap().data;
-                                            let state_duration = SystemTime::now()
-                                                .duration_since(UNIX_EPOCH)
-                                                .unwrap()
-                                                .as_secs();
-                                            let state_duration = state_duration
-                                                - agent.state_duration.clone().unwrap().data as u64;
+                                            let state_duration =
+                                                agent.state_duration.clone().unwrap().data;
 
                                             match self.agent_info_map.get_mut(&agent_id.data) {
                                                 Some(agent_info) => {
-                                                    agent_info.agent_state = agent_state;
-                                                    agent_info.state_duration = state_duration;
+                                                    agent_info.set_agent_state(agent_state);
+                                                    agent_info.set_state_duration(state_duration);
 
                                                     // 상담직원 이벤트 전송
                                                     Self::broadcast_agent_info(
@@ -208,16 +199,11 @@ impl CTM {
                                                     );
                                                 }
                                                 None => {
-                                                    let agent_info = AgentInfo {
-                                                        icm_agent_id: 0,
-                                                        agent_id: agent_id.data.clone(),
-                                                        agent_state,
-                                                        state_duration,
-                                                        reason_code: 0,
-                                                        skill_group_id: 0,
-                                                        direction: 0,
-                                                        agent_extension: "".to_string(),
-                                                    };
+                                                    let mut agent_info =
+                                                        AgentInfo::new(agent_id.clone().data);
+
+                                                    agent_info.set_agent_state(agent_state);
+                                                    agent_info.set_state_duration(state_duration);
 
                                                     self.agent_info_map.insert(
                                                         agent_id.data.clone(),
@@ -253,10 +239,10 @@ impl CTM {
 
                                 match self.agent_info_map.get_mut(&agent_id) {
                                     Some(agent_info) => {
-                                        agent_info.agent_state = agent_state;
-                                        agent_info.skill_group_id = skill_group_id as u16;
-                                        agent_info.icm_agent_id = icm_agent_id;
-                                        agent_info.agent_extension = agent_extension;
+                                        agent_info.set_agent_state(agent_state);
+                                        agent_info.set_skill_group_id(skill_group_id as u16);
+                                        agent_info.set_icm_agent_id(icm_agent_id);
+                                        agent_info.set_agent_extension(agent_extension);
 
                                         // 상담직원 이벤트 전송
                                         Self::broadcast_agent_info(
@@ -283,22 +269,17 @@ impl CTM {
                                     agent_state_event.agent_extension.unwrap().data;
                                 let direction = agent_state_event.direction.unwrap().data;
                                 let reason_code = agent_state_event.event_reason_code;
-                                let state_duration = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
-                                let state_duration =
-                                    state_duration - agent_state_event.state_duration as u64;
+                                let state_duration = agent_state_event.state_duration;
 
                                 match self.agent_info_map.get_mut(&agent_id) {
                                     Some(agent_info) => {
-                                        agent_info.agent_state = agent_state;
-                                        agent_info.skill_group_id = skill_group_id as u16;
-                                        agent_info.icm_agent_id = icm_agent_id;
-                                        agent_info.agent_extension = agent_extension;
-                                        agent_info.direction = direction;
-                                        agent_info.reason_code = reason_code;
-                                        agent_info.state_duration = state_duration;
+                                        agent_info.set_agent_state(agent_state);
+                                        agent_info.set_skill_group_id(skill_group_id as u16);
+                                        agent_info.set_icm_agent_id(icm_agent_id);
+                                        agent_info.set_agent_extension(agent_extension);
+                                        agent_info.set_direction(direction);
+                                        agent_info.set_reason_code(reason_code);
+                                        agent_info.set_state_duration(state_duration);
 
                                         // 상담직원 이벤트 전송
                                         Self::broadcast_agent_info(
