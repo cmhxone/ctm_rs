@@ -36,7 +36,7 @@ pub struct CTM {
 impl CTM {
     ///
     /// 새로운 CTM 구조체 생성
-    /// 
+    ///
     pub async fn new() -> Result<Self, Box<dyn Error>> {
         let is_active = true;
         let (cti_event_channel_tx, cti_event_channel_rx) = mpsc::channel::<CTIEvent>(1_024);
@@ -69,7 +69,7 @@ impl CTM {
 
     ///
     /// CTM 서버 실행
-    /// 
+    ///
     pub async fn start(mut self) -> Result<(), Box<dyn Error>> {
         self.cti_client.connect().await;
 
@@ -344,12 +344,16 @@ impl CTM {
         broker_event_channel_tx: broadcast::Sender<BrokerEvent>,
         agent_info: AgentInfo,
     ) {
+        let agent_info_clone = agent_info.clone();
         broker_event_channel_tx
             .send(BrokerEvent::BroadCastAgentState {
                 agent_info,
                 client_id: target_client_id,
             })
             .unwrap();
-        log::debug!("Broadcasted agent info event.");
+        log::debug!(
+            "Broadcasted agent info event. agent_info: {:?}",
+            agent_info_clone
+        );
     }
 }
