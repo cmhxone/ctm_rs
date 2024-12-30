@@ -374,7 +374,11 @@ impl ClientStream {
                     break;
                 }
                 Ok(Ok(n)) => {
-                    log::info!("Client send. {:?}", &buffer[0..n]);
+                    log::info!(
+                        "Client send. client_id: {}, buffer: {:?}",
+                        self.get_id(),
+                        &buffer[0..n]
+                    );
                 }
                 Ok(Err(e)) => {
                     log::error!("Websocket client error. {:?}", e);
