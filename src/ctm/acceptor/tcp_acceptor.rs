@@ -247,7 +247,7 @@ impl ClientStream {
                     break;
                 }
                 Ok(Ok(n)) => {
-                    log::info!(
+                    log::debug!(
                         "Client send. client_id: {}, client_addr: {}, buffer: {:?}",
                         self.get_id(),
                         self.get_addr(),
