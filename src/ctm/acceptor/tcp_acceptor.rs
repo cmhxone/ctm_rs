@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use rustls::{
@@ -102,10 +102,12 @@ impl Acceptor for TCPAcceptor {
                                 Err(_) => continue,
                             },
                             id: uuid,
+                            addr: client_addr.clone(),
                         },
                         None => ClientStream::Plain {
                             stream: native_stream,
                             id: uuid,
+                            addr: client_addr.clone(),
                         },
                     };
 
@@ -138,10 +140,12 @@ enum ClientStream {
     Plain {
         stream: TcpStream,
         id: Uuid,
+        addr: SocketAddr,
     },
     Secure {
         stream: TlsStream<TcpStream>,
         id: Uuid,
+        addr: SocketAddr,
     },
 }
 
@@ -151,8 +155,34 @@ impl ClientStream {
     ///
     fn get_id(&self) -> &Uuid {
         match self {
-            ClientStream::Plain { stream: _, id } => id,
-            ClientStream::Secure { stream: _, id } => id,
+            ClientStream::Plain {
+                stream: _,
+                id,
+                addr: _,
+            } => id,
+            ClientStream::Secure {
+                stream: _,
+                id,
+                addr: _,
+            } => id,
+        }
+    }
+
+    ///
+    /// 주소 반환
+    ///
+    fn get_addr(&self) -> &SocketAddr {
+        match self {
+            ClientStream::Plain {
+                stream: _,
+                id: _,
+                addr,
+            } => addr,
+            ClientStream::Secure {
+                stream: _,
+                id: _,
+                addr,
+            } => addr,
         }
     }
 
@@ -164,10 +194,12 @@ impl ClientStream {
             ClientStream::Plain {
                 ref mut stream,
                 id: _,
+                addr: _,
             } => Ok(stream.write(buffer).await?),
             ClientStream::Secure {
                 ref mut stream,
                 id: _,
+                addr: _,
             } => Ok(stream.write(buffer).await?),
         }
     }
@@ -177,8 +209,16 @@ impl ClientStream {
     ///
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
         match self {
-            ClientStream::Plain { stream, id: _ } => Ok(stream.read(buffer).await?),
-            ClientStream::Secure { stream, id: _ } => Ok(stream.read(buffer).await?),
+            ClientStream::Plain {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.read(buffer).await?),
+            ClientStream::Secure {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.read(buffer).await?),
         }
     }
 
@@ -208,13 +248,18 @@ impl ClientStream {
                 }
                 Ok(Ok(n)) => {
                     log::info!(
-                        "Client send. client_id: {}, buffer: {:?}",
+                        "Client send. client_id: {}, client_addr: {}, buffer: {:?}",
                         self.get_id(),
+                        self.get_addr(),
                         &buffer[0..n]
                     );
                 }
                 Ok(Err(e)) => {
-                    log::error!("TCP Client error. {:?}", e);
+                    log::error!(
+                        "TCP Client error. {:?}, client_addr: {}",
+                        e,
+                        self.get_addr()
+                    );
                     break;
                 }
                 Err(_) => {}
