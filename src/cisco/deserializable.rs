@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use log::debug;
+use log::trace;
 
 ///
 /// 역직렬화 트레잇
@@ -97,7 +97,7 @@ where
     fn deserialize<Buffer: AsMut<[u8]>>(buffer: &mut Buffer) -> (Vec<u8>, Self) {
         if buffer.as_mut().len() > 0 {
             let (buffer, result) = T::deserialize(buffer);
-            debug!("floating_field buffer: {:?}", result);
+            trace!("floating_field buffer: {:?}", result);
             (buffer, Some(result))
         } else {
             (buffer.as_mut().to_vec(), None)
