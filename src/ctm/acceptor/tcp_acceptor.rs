@@ -81,7 +81,7 @@ impl Acceptor for TCPAcceptor {
     ///
     /// 클라이언트 수신
     ///
-    async fn accept(&self) -> Result<(), Box<dyn Error>> {
+    async fn accept(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::info!("TCP server starts accepting");
 
         loop {
@@ -189,7 +189,7 @@ impl ClientStream {
     ///
     /// 데이터 전송
     ///
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
+    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
         match self {
             ClientStream::Plain {
                 ref mut stream,
@@ -207,7 +207,7 @@ impl ClientStream {
     ///
     /// 데이터 수신
     ///
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
         match self {
             ClientStream::Plain {
                 stream,
@@ -229,7 +229,7 @@ impl ClientStream {
         &mut self,
         mut broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
         client_event_channel_tx: mpsc::Sender<ClientEvent>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut buffer = vec![0_u8; 4_096];
 
         // 클라이언트 소켓 접속 이벤트 전송

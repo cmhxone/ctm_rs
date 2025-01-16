@@ -88,7 +88,7 @@ impl WebsocketAcceptor {
 
 #[async_trait]
 impl Acceptor for WebsocketAcceptor {
-    async fn accept(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn accept(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         log::info!("Websocket server starts accepting");
 
         loop {
@@ -280,7 +280,7 @@ impl ClientStream {
     ///
     /// 패킷 데이터 전송
     ///
-    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
+    async fn write(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
         match self {
             ClientStream::Plain {
                 stream,
@@ -298,7 +298,7 @@ impl ClientStream {
     ///
     /// 이진 데이터 전송
     ///
-    async fn write_binary(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error>> {
+    async fn write_binary(&mut self, buffer: &[u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
         let length = buffer.len();
         let mut send_buffer = Vec::new();
 
@@ -346,10 +346,58 @@ impl ClientStream {
     }
 
     ///
+    /// 종료 프레임 전송
+    ///
+    async fn write_close(&mut self, reason: u16) -> Result<usize, Box<dyn Error + Send + Sync>> {
+        let length = 2;
+        let mut send_buffer = Vec::new();
+
+        // 웹 소켓 프레임 헤더 추가
+        send_buffer.push(WEBSOCKET_FIN_TRUE | WEBSOCKET_OP_CODE_CLOSE_FRAME);
+        // 웹 소켓 길이 패킷 추가
+        send_buffer.push(length as u8);
+
+        // CLOSE 이유 패킷 추가
+        send_buffer.push(((reason & 0xFF00) >> 8) as u8);
+        send_buffer.push((reason & 0xFF) as u8);
+
+        match self {
+            ClientStream::Plain {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.write(&send_buffer).await.unwrap()),
+            ClientStream::Secure {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.write(&send_buffer).await.unwrap()),
+        }
+    }
+
+    ///
+    /// 커넥션 종료
+    ///
+    async fn close(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        match self {
+            ClientStream::Plain {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.shutdown().await?),
+            ClientStream::Secure {
+                stream,
+                id: _,
+                addr: _,
+            } => Ok(stream.shutdown().await?),
+        }
+    }
+
+    ///
     /// 텍스트 데이터 전송
     ///
     #[allow(unused)]
-    async fn write_text(&mut self, message: String) -> Result<usize, Box<dyn Error>> {
+    async fn write_text(&mut self, message: String) -> Result<usize, Box<dyn Error + Send + Sync>> {
         let length = message.len();
         let mut send_buffer = Vec::new();
 
@@ -399,7 +447,7 @@ impl ClientStream {
     ///
     /// 데이터 수신
     ///
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error>> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Box<dyn Error + Send + Sync>> {
         match self {
             ClientStream::Plain {
                 stream,
@@ -418,7 +466,7 @@ impl ClientStream {
         &mut self,
         mut broker_event_channel_rx: broadcast::Receiver<BrokerEvent>,
         client_event_channel_tx: mpsc::Sender<ClientEvent>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut buffer = vec![0_u8; 4_096];
 
         // 클라이언트 소켓 접속 이벤트 전송
@@ -442,6 +490,12 @@ impl ClientStream {
                         self.get_addr(),
                         &buffer[0..n]
                     );
+
+                    // CLOSE 프레임 수신하면 커넥션 닫아버림
+                    if &buffer[0] & WEBSOCKET_OP_CODE_CLOSE_FRAME != 0_u8 {
+                        self.write_close(1_000_u16).await?;
+                        self.close().await?;
+                    }
                 }
                 Ok(Err(e)) => {
                     log::error!(

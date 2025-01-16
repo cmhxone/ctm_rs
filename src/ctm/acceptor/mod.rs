@@ -7,5 +7,5 @@ pub mod websocket_acceptor;
 
 #[async_trait]
 pub trait Acceptor: Send {
-    async fn accept(&self) -> Result<(), Box<dyn Error>>;
+    async fn accept(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
