@@ -60,6 +60,7 @@ impl CTIClient {
     pub async fn connect(mut self) -> () {
         const ASYNC_POLL_TIMEOUT: u64 = 10;
         const HEART_BEAT_TIMEOUT: u64 = 10_000;
+        const CTI_SERVER_BUFFER_SIZE: usize = 1_024_768;
 
         let is_running = self.is_running.clone();
 
@@ -166,7 +167,7 @@ impl CTIClient {
             let (mut rx, mut tx) = client_stream.split();
 
             // CTI 서버 메시지 핸들링
-            let mut buffer = vec![0_u8; 4_096];
+            let mut buffer = vec![0_u8; CTI_SERVER_BUFFER_SIZE];
             loop {
                 match timeout(
                     Duration::from_millis(ASYNC_POLL_TIMEOUT),
