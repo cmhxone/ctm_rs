@@ -188,11 +188,13 @@ impl CTIClient {
                         return;
                     }
                     Ok(Ok(n)) => {
+                        log::trace!("Received CTI Packet. length: {}, packet: {:?}", n, buffer);
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
 
                         // 여러 메시지를 한 패킷에 받을 수 있어 분리해서 처리한다
                         while index < n {
+                            log::trace!("Dividing packet index: {}, length: {}", index, n);
                             // 메시지 헤더 조회
                             let (_, mhdr) =
                                 MHDR::deserialize(&mut buffer[index..index + 8].to_vec());
