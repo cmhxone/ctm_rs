@@ -188,7 +188,7 @@ impl CTIClient {
                         return;
                     }
                     Ok(Ok(n)) => {
-                        log::trace!("Received CTI Packet. length: {}, packet: {:?}", n, buffer);
+                        log::trace!("Received CTI Packet. length: {}, packet: {:?}", n, &buffer[0..n]);
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
 
