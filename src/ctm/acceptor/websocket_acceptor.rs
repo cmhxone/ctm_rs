@@ -167,7 +167,7 @@ impl Acceptor for WebsocketAcceptor {
 
                         // 웹 소켓 키를 사용해 Accept 키를 만든다
                         let header_regex =
-                            regex::Regex::new(r"Sec-WebSocket-Key: ([0-9a-zA-Z+=/]*)").unwrap();
+                            regex::Regex::new(r"Sec-WebSocket-Key:\s?([0-9a-zA-Z+=/]*)").unwrap();
                         let websocket_key = match header_regex.captures(&request_header) {
                             Some(captures) => captures.get(1).unwrap().as_str(),
                             None => {
