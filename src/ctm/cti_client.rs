@@ -82,7 +82,7 @@ impl CTIClient {
         .await
         {
             Ok(Ok(stream)) => {
-                // NAGLE 알고리즘 활성화
+                // NAGLE 알고리즘 비활성화
                 stream.set_nodelay(true).unwrap();
                 stream
             },
