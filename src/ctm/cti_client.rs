@@ -81,7 +81,11 @@ impl CTIClient {
         )
         .await
         {
-            Ok(Ok(stream)) => stream,
+            Ok(Ok(stream)) => {
+                // NAGLE 알고리즘 활성화
+                stream.set_nodelay(true).unwrap();
+                stream
+            },
             Ok(Err(e)) => {
                 self.cti_event_channel_tx
                     .send(CTIEvent::Error {
