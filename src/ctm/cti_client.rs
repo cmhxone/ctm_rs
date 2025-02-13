@@ -60,7 +60,7 @@ impl CTIClient {
     pub async fn connect(mut self) -> () {
         const ASYNC_POLL_TIMEOUT: u64 = 10;
         const HEART_BEAT_TIMEOUT: u64 = 10_000;
-        const CTI_SERVER_BUFFER_SIZE: usize = 1_024_768;
+        const CTI_SERVER_BUFFER_SIZE: usize = 65_536;
 
         let is_running = self.is_running.clone();
 
@@ -85,7 +85,7 @@ impl CTIClient {
                 // NAGLE 알고리즘 비활성화
                 stream.set_nodelay(true).unwrap();
                 stream
-            },
+            }
             Ok(Err(e)) => {
                 self.cti_event_channel_tx
                     .send(CTIEvent::Error {
@@ -172,6 +172,8 @@ impl CTIClient {
 
             // CTI 서버 메시지 핸들링
             let mut buffer = vec![0_u8; CTI_SERVER_BUFFER_SIZE];
+            let mut reserved_length = 0_usize;
+            let mut reserved_buffer = vec![0_u8; CTI_SERVER_BUFFER_SIZE];
             loop {
                 match timeout(
                     Duration::from_millis(ASYNC_POLL_TIMEOUT),
@@ -192,7 +194,15 @@ impl CTIClient {
                         return;
                     }
                     Ok(Ok(n)) => {
-                        // 슬라이스가 아닌 직접 참조 방식으로 변경 (linux epoll 논블로킹 슬라이스 참조 문제가 발생, windows는 정상)
+                        // 수신받은 패킷 이전에 처리 예약된 패킷이 있는 경우 수신 패킷이전에 추가한다
+                        // Linux 에서 문제가 발생해서 추가함
+                        let mut received_packet = reserved_buffer[0..reserved_length].to_vec();
+                        reserved_length = 0;
+
+                        // 수신된 버퍼를 추가한다
+                        received_packet.extend_from_slice(&buffer[0..n]);
+
+                        // 슬라이스가 아닌 직접 참조 방식으로 변경
                         let received_packet = buffer[0..n].to_vec();
 
                         log::trace!(
@@ -200,6 +210,7 @@ impl CTIClient {
                             n,
                             &received_packet[0..n]
                         );
+
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
 
@@ -209,6 +220,17 @@ impl CTIClient {
                             // 메시지 헤더 조회
                             let (_, mhdr) =
                                 MHDR::deserialize(&mut received_packet[index..index + 8].to_vec());
+
+                            // 수신된 패킷의 길이가 메시지 헤더에서 정의된 길이보다 짧은 경우
+                            if n < (mhdr.length as usize) {
+                                // 예약된 버퍼에 수신된 패킷을 이동
+                                reserved_buffer[..n].copy_from_slice(&received_packet[..n]);
+                                reserved_length = n;
+
+                                log::trace!("Reserved buffer: {:?}", &reserved_buffer[0..reserved_length]);
+
+                                break;
+                            }
 
                             self.cti_event_channel_tx
                                 .send(CTIEvent::Recevied {
