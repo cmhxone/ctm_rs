@@ -188,7 +188,14 @@ impl CTIClient {
                         return;
                     }
                     Ok(Ok(n)) => {
-                        log::trace!("Received CTI Packet. length: {}, packet: {:?}", n, &buffer[0..n]);
+                        // 슬라이스가 아닌 직접 참조 방식으로 변경 (linux epoll 논블로킹 슬라이스 참조 문제가 발생, windows는 정상)
+                        let received_packet = buffer[0..n].to_vec();
+
+                        log::trace!(
+                            "Received CTI Packet. length: {}, packet: {:?}",
+                            n,
+                            &received_packet[0..n]
+                        );
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
 
@@ -197,13 +204,14 @@ impl CTIClient {
                             log::trace!("Dividing packet index: {}, length: {}", index, n);
                             // 메시지 헤더 조회
                             let (_, mhdr) =
-                                MHDR::deserialize(&mut buffer[index..index + 8].to_vec());
+                                MHDR::deserialize(&mut received_packet[index..index + 8].to_vec());
 
                             self.cti_event_channel_tx
                                 .send(CTIEvent::Recevied {
                                     cti_server_host: cti_server_address.clone(),
                                     message_type: mhdr.message_type,
-                                    data: buffer[index..index + (mhdr.length + 8) as usize]
+                                    data: received_packet
+                                        [index..index + (mhdr.length + 8) as usize]
                                         .to_vec(),
                                 })
                                 .await
