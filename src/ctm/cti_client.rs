@@ -197,6 +197,7 @@ impl CTIClient {
                         // 수신받은 패킷 이전에 처리 예약된 패킷이 있는 경우 수신 패킷이전에 추가한다
                         // Linux 에서 문제가 발생해서 추가함
                         let mut received_packet = reserved_buffer[0..reserved_length].to_vec();
+                        let total_length = n + reserved_length;
                         reserved_length = 0;
 
                         // 수신된 버퍼를 추가한다
@@ -204,25 +205,25 @@ impl CTIClient {
 
                         log::trace!(
                             "Received CTI Packet. length: {}, packet: {:?}",
-                            n,
-                            &received_packet[0..n]
+                            total_length,
+                            &received_packet[0..total_length]
                         );
 
                         // CTI 서버로부터 패킷을 전송받은 경우
                         let mut index = 0_usize;
 
                         // 여러 메시지를 한 패킷에 받을 수 있어 분리해서 처리한다
-                        while index < n {
-                            log::trace!("Dividing packet index: {}, length: {}", index, n);
+                        while index < total_length {
+                            log::trace!("Dividing packet index: {}, length: {}", index, total_length);
                             // 메시지 헤더 조회
                             let (_, mhdr) =
                                 MHDR::deserialize(&mut received_packet[index..index + 8].to_vec());
 
                             // 수신된 패킷의 길이가 메시지 헤더에서 정의된 길이보다 짧은 경우
-                            if n < (mhdr.length as usize) {
+                            if total_length < (mhdr.length as usize) {
                                 // 예약된 버퍼에 수신된 패킷을 이동
                                 reserved_buffer[..n].copy_from_slice(&received_packet[..n]);
-                                reserved_length = n;
+                                reserved_length = total_length;
 
                                 log::trace!("Reserved buffer: {:?}", &reserved_buffer[0..reserved_length]);
 
