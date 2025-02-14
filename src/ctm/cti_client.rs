@@ -202,9 +202,6 @@ impl CTIClient {
                         // 수신된 버퍼를 추가한다
                         received_packet.extend_from_slice(&buffer[0..n]);
 
-                        // 슬라이스가 아닌 직접 참조 방식으로 변경
-                        let received_packet = buffer[0..n].to_vec();
-
                         log::trace!(
                             "Received CTI Packet. length: {}, packet: {:?}",
                             n,
