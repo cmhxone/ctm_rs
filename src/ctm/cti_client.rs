@@ -220,7 +220,7 @@ impl CTIClient {
                                 MHDR::deserialize(&mut received_packet[index..index + 8].to_vec());
 
                             // 수신된 패킷의 길이가 메시지 헤더에서 정의된 길이보다 짧은 경우
-                            if total_length < (mhdr.length as usize) {
+                            if total_length < (8 + mhdr.length as usize) {
                                 // 예약된 버퍼에 수신된 패킷을 이동
                                 reserved_buffer[..n].copy_from_slice(&received_packet[..n]);
                                 reserved_length = total_length;
