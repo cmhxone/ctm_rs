@@ -57,7 +57,15 @@ impl AgentInfo {
     }
 
     pub fn set_skill_group_id(&mut self, skill_group_id: u16) {
-        self.skill_group_id = skill_group_id;
+        // 통화, 보류 상태일때만 할당
+        match self.agent_state {
+                4 | 10 => {
+                    self.skill_group_id = skill_group_id;
+                }
+            _ => {
+                self.skill_group_id = 0;
+            }
+        }
     }
 
     pub fn set_direction(&mut self, direction: u32) {
